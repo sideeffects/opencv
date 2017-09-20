@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+set -o pipefail
+
+export LC_CTYPE=C
+
+headers="$(find . -name '*.h') \
+	$(find . -name '*.hpp')"
+files="$(find . -name '*.cpp') \
+	$(find . -name '*.cmake') \
+	$headers"
+
+c_symbols="$(grep -o "CVAPI(.*)\s*\(cv[0-9a-zA-Z_]*\)" $headers | cut -f 2 -d ')' | awk '{$1=$1};1')"
+matches="$(echo $c_symbols | sed -E 's/ /\|/g' | sed -E 's/cv(_sidefx)?//g')"
+perl -pi -e "s/cv(_sidefx)?($matches)/cv_sidefx\2/g" $files
+
+perl -pi -e 's/(namespace\s*)cv(\W|$)/\1cv_sidefx\2/g' $files
+perl -pi -e 's/(\W|^)cv::/\1cv_sidefx::/g' $files
