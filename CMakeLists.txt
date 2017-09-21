@@ -571,6 +571,116 @@ if(ANDROID)
   endif()
 endif()
 
+if(ANDROID OR WIN32)
+  ocv_update(OPENCV_DOC_INSTALL_PATH doc)
+else()
+  ocv_update(OPENCV_DOC_INSTALL_PATH share/OpenCV/doc)
+endif()
+
+if(WIN32 AND CMAKE_HOST_SYSTEM_NAME MATCHES Windows)
+  if(DEFINED OpenCV_RUNTIME AND DEFINED OpenCV_ARCH)
+    ocv_update(OpenCV_INSTALL_BINARIES_PREFIX "${OpenCV_ARCH}/${OpenCV_RUNTIME}/")
+  else()
+    message(STATUS "Can't detect runtime and/or arch")
+    ocv_update(OpenCV_INSTALL_BINARIES_PREFIX "")
+  endif()
+elseif(ANDROID)
+  ocv_update(OpenCV_INSTALL_BINARIES_PREFIX "sdk/native/")
+else()
+  ocv_update(OpenCV_INSTALL_BINARIES_PREFIX "")
+endif()
+
+if(ANDROID)
+  ocv_update(OPENCV_SAMPLES_BIN_INSTALL_PATH "${OpenCV_INSTALL_BINARIES_PREFIX}samples/${ANDROID_NDK_ABI_NAME}")
+else()
+  ocv_update(OPENCV_SAMPLES_BIN_INSTALL_PATH "${OpenCV_INSTALL_BINARIES_PREFIX}samples")
+endif()
+
+if(ANDROID)
+  ocv_update(OPENCV_BIN_INSTALL_PATH "${OpenCV_INSTALL_BINARIES_PREFIX}bin/${ANDROID_NDK_ABI_NAME}")
+else()
+  ocv_update(OPENCV_BIN_INSTALL_PATH "${OpenCV_INSTALL_BINARIES_PREFIX}bin")
+endif()
+
+if(NOT OPENCV_TEST_INSTALL_PATH)
+  ocv_update(OPENCV_TEST_INSTALL_PATH "${OPENCV_BIN_INSTALL_PATH}")
+endif()
+
+if (OPENCV_TEST_DATA_PATH)
+  get_filename_component(OPENCV_TEST_DATA_PATH ${OPENCV_TEST_DATA_PATH} ABSOLUTE)
+endif()
+
+if(ANDROID)
+  ocv_update(OPENCV_TEST_DATA_INSTALL_PATH "sdk/etc/testdata")
+elseif(WIN32)
+  ocv_update(OPENCV_TEST_DATA_INSTALL_PATH "testdata")
+else()
+  ocv_update(OPENCV_TEST_DATA_INSTALL_PATH "share/OpenCV/testdata")
+endif()
+
+if(ANDROID)
+  set(LIBRARY_OUTPUT_PATH                "${OpenCV_BINARY_DIR}/lib/${ANDROID_NDK_ABI_NAME}")
+  ocv_update(3P_LIBRARY_OUTPUT_PATH      "${OpenCV_BINARY_DIR}/3rdparty/lib/${ANDROID_NDK_ABI_NAME}")
+  ocv_update(OPENCV_LIB_INSTALL_PATH     sdk/native/libs/${ANDROID_NDK_ABI_NAME})
+  ocv_update(OPENCV_3P_LIB_INSTALL_PATH  sdk/native/3rdparty/libs/${ANDROID_NDK_ABI_NAME})
+  ocv_update(OPENCV_CONFIG_INSTALL_PATH  sdk/native/jni)
+  ocv_update(OPENCV_INCLUDE_INSTALL_PATH sdk/native/jni/include)
+  ocv_update(OPENCV_SAMPLES_SRC_INSTALL_PATH samples/native)
+  ocv_update(OPENCV_OTHER_INSTALL_PATH   sdk/etc)
+else()
+  set(LIBRARY_OUTPUT_PATH                "${OpenCV_BINARY_DIR}/lib")
+  ocv_update(3P_LIBRARY_OUTPUT_PATH      "${OpenCV_BINARY_DIR}/3rdparty/lib${LIB_SUFFIX}")
+
+  if(WIN32 AND CMAKE_HOST_SYSTEM_NAME MATCHES Windows)
+    if(OpenCV_STATIC)
+      ocv_update(OPENCV_LIB_INSTALL_PATH   "${OpenCV_INSTALL_BINARIES_PREFIX}staticlib${LIB_SUFFIX}")
+    else()
+      ocv_update(OPENCV_LIB_INSTALL_PATH   "${OpenCV_INSTALL_BINARIES_PREFIX}lib${LIB_SUFFIX}")
+    endif()
+    ocv_update(OPENCV_3P_LIB_INSTALL_PATH  "${OpenCV_INSTALL_BINARIES_PREFIX}staticlib${LIB_SUFFIX}")
+    ocv_update(OPENCV_SAMPLES_SRC_INSTALL_PATH    samples/native)
+    ocv_update(OPENCV_JAR_INSTALL_PATH java)
+    ocv_update(OPENCV_OTHER_INSTALL_PATH   etc)
+    ocv_update(OPENCV_CONFIG_INSTALL_PATH  ".")
+  else()
+    ocv_update(OPENCV_LIB_INSTALL_PATH     lib${LIB_SUFFIX})
+    ocv_update(OPENCV_3P_LIB_INSTALL_PATH  share/OpenCV/3rdparty/${OPENCV_LIB_INSTALL_PATH})
+    ocv_update(OPENCV_SAMPLES_SRC_INSTALL_PATH    share/OpenCV/samples)
+    ocv_update(OPENCV_JAR_INSTALL_PATH share/OpenCV/java)
+    ocv_update(OPENCV_OTHER_INSTALL_PATH   share/OpenCV)
+
+    if(NOT DEFINED OPENCV_CONFIG_INSTALL_PATH)
+      math(EXPR SIZEOF_VOID_P_BITS "8 * ${CMAKE_SIZEOF_VOID_P}")
+      if(LIB_SUFFIX AND NOT SIZEOF_VOID_P_BITS EQUAL LIB_SUFFIX)
+        ocv_update(OPENCV_CONFIG_INSTALL_PATH lib${LIB_SUFFIX}/cmake/opencv)
+      else()
+        ocv_update(OPENCV_CONFIG_INSTALL_PATH share/OpenCV)
+      endif()
+    endif()
+  endif()
+  ocv_update(OPENCV_INCLUDE_INSTALL_PATH "include")
+endif()
+
+#ocv_update(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${OPENCV_LIB_INSTALL_PATH}")
+#set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+if(INSTALL_TO_MANGLED_PATHS)
+  set(OPENCV_INCLUDE_INSTALL_PATH ${OPENCV_INCLUDE_INSTALL_PATH}/opencv-${OPENCV_VERSION})
+  foreach(v
+      OPENCV_3P_LIB_INSTALL_PATH
+      OPENCV_SAMPLES_SRC_INSTALL_PATH
+      OPENCV_CONFIG_INSTALL_PATH
+      OPENCV_DOC_INSTALL_PATH
+      OPENCV_JAR_INSTALL_PATH
+      OPENCV_TEST_DATA_INSTALL_PATH
+      OPENCV_OTHER_INSTALL_PATH
+    )
+    string(REPLACE "OpenCV" "OpenCV-${OPENCV_VERSION}" ${v} "${${v}}")
+    string(REPLACE "opencv" "opencv-${OPENCV_VERSION}" ${v} "${${v}}")
+  endforeach()
+endif()
+
+
 if(WIN32)
   # Postfix of DLLs:
   ocv_update(OPENCV_DLLVERSION "${OPENCV_VERSION_MAJOR}${OPENCV_VERSION_MINOR}${OPENCV_VERSION_PATCH}")
