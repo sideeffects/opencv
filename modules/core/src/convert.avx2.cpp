@@ -55,12 +55,11 @@ void cvtScale_s16s32f32Line_AVX2(const short* src, int* dst, float scale, float 
 
     __m256 scale256 = _mm256_set1_ps(scale);
     __m256 shift256 = _mm256_set1_ps(shift);
-    const int shuffle = 0xD8;
 
     for (; x <= width - 16; x += 16)
     {
         __m256i v_src = _mm256_loadu_si256((const __m256i *)(src + x));
-        v_src = _mm256_permute4x64_epi64(v_src, shuffle);
+        v_src = _mm256_permute4x64_epi64(v_src, 0xD8);
         __m256i v_src_lo = _mm256_srai_epi32(_mm256_unpacklo_epi16(v_src, v_src), 16);
         __m256i v_src_hi = _mm256_srai_epi32(_mm256_unpackhi_epi16(v_src, v_src), 16);
         __m256 v_dst0 = _mm256_add_ps(_mm256_mul_ps(_mm256_cvtepi32_ps(v_src_lo), scale256), shift256);
