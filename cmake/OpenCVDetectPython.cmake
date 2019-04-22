@@ -71,6 +71,7 @@ if(NOT ${found})
 
   if(PYTHONINTERP_FOUND)
     # Check if python major version is correct
+<<<<<<< HEAD
     if(" ${_python_version_major}" STREQUAL " ")
       set(_python_version_major "${PYTHON_VERSION_MAJOR}")
     endif()
@@ -92,6 +93,9 @@ if(NOT ${found})
       endif()
     endif()
     if(PYTHONINTERP_FOUND AND "${_python_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}")
+=======
+    if( "${_preferred_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}" )
+>>>>>>> 83d042ce95 (Fixed an if condition which potentially checked against a variable, $PYTHON_VERSION_MAJOR, that was empty.  This caused a cmake generation failure with cmake 3.14.)
       # Copy outputs
       set(_found ${PYTHONINTERP_FOUND})
       set(_executable ${PYTHON_EXECUTABLE})
