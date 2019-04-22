@@ -56,7 +56,7 @@ if(NOT ${found})
 
   if(PYTHONINTERP_FOUND)
     # Check if python major version is correct
-    if(${_preferred_version_major} EQUAL ${PYTHON_VERSION_MAJOR})
+    if( "${_preferred_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}" )
       # Copy outputs
       set(_found ${PYTHONINTERP_FOUND})
       set(_executable ${PYTHON_EXECUTABLE})
