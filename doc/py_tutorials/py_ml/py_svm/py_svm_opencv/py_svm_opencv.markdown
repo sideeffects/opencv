@@ -36,7 +36,7 @@ gives us a feature vector containing 64 values. This is the feature vector we us
 
 Finally, as in the previous case, we start by splitting our big dataset into individual cells. For
 every digit, 250 cells are reserved for training data and remaining 250 data is reserved for
-testing. Full code is given below, you also can download it from [here](https://github.com/opencv/opencv/tree/master/samples/python/tutorial_code/ml/py_svm_opencv/hogsvm.py):
+testing. Full code is given below, you also can download it from [here](https://github.com/opencv/opencv/tree/4.x/samples/python/tutorial_code/ml/py_svm_opencv/hogsvm.py):
 
 @include samples/python/tutorial_code/ml/py_svm_opencv/hogsvm.py
 
@@ -47,7 +47,7 @@ area and try to implement them.
 Additional Resources
 --------------------
 
--#  [Histograms of Oriented Gradients Video](www.youtube.com/watch?v=0Zib1YEE4LU‎)
+-#  [Histograms of Oriented Gradients Video](https://www.youtube.com/watch?v=0Zib1YEE4LU)
 
 Exercises
 ---------

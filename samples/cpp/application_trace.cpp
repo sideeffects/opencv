@@ -1,7 +1,10 @@
 /* OpenCV Application Tracing support demo. */
 #include <iostream>
 
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
 #include <opencv2/core/utils/trace.hpp>
 
 using namespace cv;
@@ -39,7 +42,7 @@ int main(int argc, char** argv)
     if (video.size() == 1 && isdigit(video[0]))
         capture.open(parser.get<int>("@video"));
     else
-        capture.open(video);
+        capture.open(samples::findFileOrKeep(video));  // keep GStreamer pipelines
     int nframes = 0;
     if (capture.isOpened())
     {

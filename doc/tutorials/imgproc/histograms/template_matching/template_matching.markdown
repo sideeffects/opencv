@@ -1,8 +1,15 @@
 Template Matching {#tutorial_template_matching}
 =================
 
+@tableofcontents
+
 @prev_tutorial{tutorial_back_projection}
 @next_tutorial{tutorial_find_contours}
+
+|    |    |
+| -: | :- |
+| Original author | Ana Huamán |
+| Compatibility | OpenCV >= 3.0 |
 
 Goal
 ----
@@ -31,7 +38,7 @@ that should be used to find the match.
 -   We need two primary components:
 
     -#  **Source image (I):** The image in which we expect to find a match to the template image
-    -#  **Template image (T):** The patch image which will be compared to the template image
+    -#  **Template image (T):** The patch image which will be compared to the source image
 
     our goal is to detect the highest matching area:
 
@@ -61,11 +68,11 @@ that should be used to find the match.
 - If masking is needed for the match, three components are required:
 
     -#  **Source image (I):** The image in which we expect to find a match to the template image
-    -#  **Template image (T):** The patch image which will be compared to the template image
+    -#  **Template image (T):** The patch image which will be compared to the source image
     -#  **Mask image (M):** The mask, a grayscale image that masks the template
 
 
--   Only two matching methods currently accept a mask: CV_TM_SQDIFF and CV_TM_CCORR_NORMED (see
+-   Only two matching methods currently accept a mask: TM_SQDIFF and TM_CCORR_NORMED (see
     below for explanation of all the matching methods available in opencv).
 
 
@@ -86,23 +93,23 @@ that should be used to find the match.
 Good question. OpenCV implements Template matching in the function **matchTemplate()**. The
 available methods are 6:
 
--#  **method=CV_TM_SQDIFF**
+-#  **method=TM_SQDIFF**
 
     \f[R(x,y)= \sum _{x',y'} (T(x',y')-I(x+x',y+y'))^2\f]
 
--#  **method=CV_TM_SQDIFF_NORMED**
+-#  **method=TM_SQDIFF_NORMED**
 
     \f[R(x,y)= \frac{\sum_{x',y'} (T(x',y')-I(x+x',y+y'))^2}{\sqrt{\sum_{x',y'}T(x',y')^2 \cdot \sum_{x',y'} I(x+x',y+y')^2}}\f]
 
--#  **method=CV_TM_CCORR**
+-#  **method=TM_CCORR**
 
     \f[R(x,y)= \sum _{x',y'} (T(x',y')  \cdot I(x+x',y+y'))\f]
 
--#  **method=CV_TM_CCORR_NORMED**
+-#  **method=TM_CCORR_NORMED**
 
     \f[R(x,y)= \frac{\sum_{x',y'} (T(x',y') \cdot I(x+x',y+y'))}{\sqrt{\sum_{x',y'}T(x',y')^2 \cdot \sum_{x',y'} I(x+x',y+y')^2}}\f]
 
--#  **method=CV_TM_CCOEFF**
+-#  **method=TM_CCOEFF**
 
     \f[R(x,y)= \sum _{x',y'} (T'(x',y')  \cdot I'(x+x',y+y'))\f]
 
@@ -110,7 +117,7 @@ available methods are 6:
 
     \f[\begin{array}{l} T'(x',y')=T(x',y') - 1/(w  \cdot h)  \cdot \sum _{x'',y''} T(x'',y'') \\ I'(x+x',y+y')=I(x+x',y+y') - 1/(w  \cdot h)  \cdot \sum _{x'',y''} I(x+x'',y+y'') \end{array}\f]
 
--#  **method=CV_TM_CCOEFF_NORMED**
+-#  **method=TM_CCOEFF_NORMED**
 
     \f[R(x,y)= \frac{ \sum_{x',y'} (T'(x',y') \cdot I'(x+x',y+y')) }{ \sqrt{\sum_{x',y'}T'(x',y')^2 \cdot \sum_{x',y'} I'(x+x',y+y')^2} }\f]
 
@@ -130,7 +137,7 @@ Code
 @add_toggle_cpp
 
 -   **Downloadable code**: Click
-    [here](https://github.com/opencv/opencv/tree/master/samples/cpp/tutorial_code/Histograms_Matching/MatchTemplate_Demo.cpp)
+    [here](https://github.com/opencv/opencv/tree/4.x/samples/cpp/tutorial_code/Histograms_Matching/MatchTemplate_Demo.cpp)
 -   **Code at glance:**
     @include samples/cpp/tutorial_code/Histograms_Matching/MatchTemplate_Demo.cpp
 
@@ -139,7 +146,7 @@ Code
 @add_toggle_java
 
 -   **Downloadable code**: Click
-    [here](https://github.com/opencv/opencv/tree/master/samples/java/tutorial_code/ImgProc/tutorial_template_matching/MatchTemplateDemo.java)
+    [here](https://github.com/opencv/opencv/tree/4.x/samples/java/tutorial_code/ImgProc/tutorial_template_matching/MatchTemplateDemo.java)
 -   **Code at glance:**
     @include samples/java/tutorial_code/ImgProc/tutorial_template_matching/MatchTemplateDemo.java
 
@@ -148,7 +155,7 @@ Code
 @add_toggle_python
 
 -   **Downloadable code**: Click
-    [here](https://github.com/opencv/opencv/tree/master/samples/python/tutorial_code/imgProc/match_template/match_template.py)
+    [here](https://github.com/opencv/opencv/tree/4.x/samples/python/tutorial_code/imgProc/match_template/match_template.py)
 -   **Code at glance:**
     @include samples/python/tutorial_code/imgProc/match_template/match_template.py
 

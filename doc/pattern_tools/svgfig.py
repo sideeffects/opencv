@@ -29,16 +29,10 @@ try:
 except NameError:
     unicode = lambda s: str(s)
 
-if re.search("windows", platform.system(), re.I):
-    try:
-        import _winreg
-        _default_directory = _winreg.QueryValueEx(_winreg.OpenKey(_winreg.HKEY_CURRENT_USER,
-                             r"Software\Microsoft\Windows\Current Version\Explorer\Shell Folders"), "Desktop")[0]
-#   tmpdir = _winreg.QueryValueEx(_winreg.OpenKey(_winreg.HKEY_CURRENT_USER, "Environment"), "TEMP")[0]
-#   if tmpdir[0:13] != "%USERPROFILE%":
-#     tmpdir = os.path.expanduser("~") + tmpdir[13:]
-    except:
-        _default_directory = os.path.expanduser("~") + os.sep + "Desktop"
+try:
+    xrange          # Python 2
+except NameError:
+    xrange = range  # Python 3
 
 _default_fileName = "tmp.svg"
 
@@ -443,12 +437,9 @@ class SVG:
 
         return output
 
-    def interpret_fileName(self, fileName=None):
-        if fileName is None:
-            fileName = _default_fileName
-        if re.search("windows", platform.system(), re.I) and not os.path.isabs(fileName):
-            fileName = _default_directory + os.sep + fileName
-        return fileName
+    @staticmethod
+    def interpret_fileName(fileName=None):
+        return fileName or _default_fileName
 
     def save(self, fileName=None, encoding="utf-8", compresslevel=None):
         """Save to a file for viewing.  Note that svg.save() overwrites the file named _default_fileName.
@@ -600,7 +591,7 @@ def template(fileName, svg, replaceme="REPLACEME"):
 
 def load(fileName):
     """Loads an SVG image from a file."""
-    return load_stream(file(fileName))
+    return load_stream(open(fileName))
 
 def load_stream(stream):
     """Loads an SVG image from a stream (can be a string or a file object)."""
@@ -1857,7 +1848,7 @@ class Poly:
                                             piecewise-linear segments joining the (x,y) points
     "bezier"/"B"        d=[(x, y, c1x, c1y, c2x, c2y), ...]
                                             Bezier curve with two control points (control points
-                                            preceed (x,y), as in SVG paths). If (c1x,c1y) and
+                                            precede (x,y), as in SVG paths). If (c1x,c1y) and
                                             (c2x,c2y) both equal (x,y), you get a linear
                                             interpolation ("lines")
     "velocity"/"V"      d=[(x, y, vx, vy), ...]

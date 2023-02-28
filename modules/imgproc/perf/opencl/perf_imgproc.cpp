@@ -47,7 +47,7 @@
 #include "../perf_precomp.hpp"
 #include "opencv2/ts/ocl_perf.hpp"
 
-namespace cvtest {
+namespace opencv_test {
 namespace ocl {
 
 ///////////// equalizeHist ////////////////////////
@@ -166,7 +166,17 @@ OCL_PERF_TEST_P(CornerMinEigenValFixture, CornerMinEigenVal,
 
     OCL_TEST_CYCLE() cv::cornerMinEigenVal(src, dst, blockSize, apertureSize, borderType);
 
-    SANITY_CHECK(dst, 1e-6, ERROR_RELATIVE);
+#ifdef HAVE_OPENCL
+    bool strictCheck = !ocl::useOpenCL() || ocl::Device::getDefault().isIntel();
+#else
+    bool strictCheck = true;
+#endif
+
+    // using native_* OpenCL functions on non-intel devices may lose accuracy
+    if (strictCheck)
+        SANITY_CHECK(dst, 1e-6, ERROR_RELATIVE);
+    else
+        SANITY_CHECK(dst, 0.1, ERROR_RELATIVE);
 }
 
 ///////////// CornerHarris ////////////////////////
@@ -311,7 +321,7 @@ OCL_PERF_TEST_P(CannyFixture, Canny, ::testing::Combine(OCL_TEST_SIZES, OCL_PERF
     ASSERT_TRUE(!_img.empty()) << "can't open aloe-L.png";
 
     UMat img;
-    cv::resize(_img, img, imgSize);
+    cv::resize(_img, img, imgSize, 0, 0, INTER_LINEAR_EXACT);
     UMat edges(img.size(), CV_8UC1);
 
     declare.in(img).out(edges);
@@ -323,4 +333,4 @@ OCL_PERF_TEST_P(CannyFixture, Canny, ::testing::Combine(OCL_TEST_SIZES, OCL_PERF
     SANITY_CHECK_NOTHING();
 }
 
-} } // namespace cvtest::ocl
+} } // namespace opencv_test::ocl

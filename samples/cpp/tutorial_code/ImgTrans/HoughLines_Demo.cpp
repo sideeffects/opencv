@@ -38,12 +38,12 @@ void Probabilistic_Hough( int, void* );
 int main( int argc, char** argv )
 {
    // Read the image
-    String imageName("../data/building.jpg"); // by default
+    String imageName("building.jpg"); // by default
     if (argc > 1)
     {
         imageName = argv[1];
     }
-    src = imread( imageName, IMREAD_COLOR );
+    src = imread( samples::findFile( imageName ), IMREAD_COLOR );
 
    if( src.empty() )
      { help();
@@ -58,7 +58,7 @@ int main( int argc, char** argv )
 
    /// Create Trackbars for Thresholds
    char thresh_label[50];
-   sprintf( thresh_label, "Thres: %d + input", min_threshold );
+   snprintf( thresh_label, sizeof(thresh_label), "Thres: %d + input", min_threshold );
 
    namedWindow( standard_name, WINDOW_AUTOSIZE );
    createTrackbar( thresh_label, standard_name, &s_trackbar, max_trackbar, Standard_Hough);

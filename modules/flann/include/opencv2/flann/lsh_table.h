@@ -35,6 +35,8 @@
 #ifndef OPENCV_FLANN_LSH_TABLE_H_
 #define OPENCV_FLANN_LSH_TABLE_H_
 
+//! @cond IGNORED
+
 #include <algorithm>
 #include <iostream>
 #include <iomanip>
@@ -55,6 +57,12 @@
 
 #include "dynamic_bitset.h"
 #include "matrix.h"
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4702) //disable unreachable code
+#endif
+
 
 namespace cvflann
 {
@@ -159,9 +167,8 @@ public:
     LshTable(unsigned int feature_size, unsigned int key_size)
     {
         feature_size_ = feature_size;
-        (void)key_size;
-        std::cerr << "LSH is not implemented for that type" << std::endl;
-        assert(0);
+        CV_UNUSED(key_size);
+        CV_Error(cv::Error::StsUnsupportedFormat, "LSH is not implemented for that type" );
     }
 
     /** Add a feature to the table
@@ -241,9 +248,8 @@ public:
      */
     size_t getKey(const ElementType* /*feature*/) const
     {
-        std::cerr << "LSH is not implemented for that type" << std::endl;
-        assert(0);
-        return 1;
+        CV_Error(cv::Error::StsUnsupportedFormat, "LSH is not implemented for that type" );
+        return 0;
     }
 
     /** Get statistics about the table
@@ -354,8 +360,8 @@ inline LshTable<unsigned char>::LshTable(unsigned int feature_size, unsigned int
     mask_ = std::vector<size_t>((feature_size * sizeof(char) + sizeof(size_t) - 1) / sizeof(size_t), 0);
 
     // A bit brutal but fast to code
-    std::vector<size_t> indices(feature_size * CHAR_BIT);
-    for (size_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = i;
+    std::vector<int> indices(feature_size * CHAR_BIT);
+    for (size_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = (int)i;
 #ifndef OPENCV_FLANN_USE_STD_RAND
     cv::randShuffle(indices);
 #else
@@ -508,6 +514,12 @@ inline LshStats LshTable<unsigned char>::getStats() const
 }
 }
 
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//! @endcond
 
 #endif /* OPENCV_FLANN_LSH_TABLE_H_ */

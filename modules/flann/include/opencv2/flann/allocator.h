@@ -31,6 +31,8 @@
 #ifndef OPENCV_FLANN_ALLOCATOR_H_
 #define OPENCV_FLANN_ALLOCATOR_H_
 
+//! @cond IGNORED
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -182,8 +184,13 @@ public:
         return mem;
     }
 
+private:
+    PooledAllocator(const PooledAllocator &); // copy disabled
+    PooledAllocator& operator=(const PooledAllocator &); // assign disabled
 };
 
 }
+
+//! @endcond
 
 #endif //OPENCV_FLANN_ALLOCATOR_H_

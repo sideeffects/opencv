@@ -1,13 +1,21 @@
 How to use the OpenCV parallel_for_ to parallelize your code {#tutorial_how_to_use_OpenCV_parallel_for_}
 ==================================================================
 
+@tableofcontents
+
+@prev_tutorial{tutorial_file_input_output_with_xml_yml}
+
+|    |    |
+| -: | :- |
+| Compatibility | OpenCV >= 3.0 |
+
 Goal
 ----
 
 The goal of this tutorial is to show you how to use the OpenCV `parallel_for_` framework to easily
 parallelize your code. To illustrate the concept, we will write a program to draw a Mandelbrot set
 exploiting almost all the CPU load available.
-The full tutorial code is [here](https://github.com/opencv/opencv/blob/master/samples/cpp/tutorial_code/core/how_to_use_OpenCV_parallel_for_/how_to_use_OpenCV_parallel_for_.cpp).
+The full tutorial code is [here](https://github.com/opencv/opencv/blob/4.x/samples/cpp/tutorial_code/core/how_to_use_OpenCV_parallel_for_/how_to_use_OpenCV_parallel_for_.cpp).
 If you want more information about multithreading, you will have to refer to a reference book or course as this tutorial is intended
 to remain simple.
 
@@ -25,12 +33,12 @@ In OpenCV 3.2, the following parallel frameworks are available in that order:
 7.   Pthreads (if available)
 
 As you can see, several parallel frameworks can be used in the OpenCV library. Some parallel libraries
-are third party libraries and have to be explictly built and enabled in CMake (e.g. TBB, C=), others are
+are third party libraries and have to be explicitly built and enabled in CMake (e.g. TBB, C=), others are
 automatically available with the platform (e.g. APPLE GCD) but chances are that you should be enable to
 have access to a parallel framework either directly or by enabling the option in CMake and rebuild the library.
 
 The second (weak) precondition is more related to the task you want to achieve as not all computations
-are suitable / can be adatapted to be run in a parallel way. To remain simple, tasks that can be splitted
+are suitable / can be adapted to be run in a parallel way. To remain simple, tasks that can be split
 into multiple elementary operations with no memory dependency (no possible race condition) are easily
 parallelizable. Computer vision processing are often easily parallelizable as most of the time the processing of
 one pixel does not depend to the state of other pixels.
@@ -39,7 +47,7 @@ Simple example: drawing a Mandelbrot set
 ----
 
 We will use the example of drawing a Mandelbrot set to show how from a regular sequential code you can easily adapt
-the code to parallize the computation.
+the code to parallelize the computation.
 
 Theory
 -----------
@@ -175,7 +183,7 @@ C++ 11 standard allows to simplify the parallel implementation by get rid of the
 Results
 -----------
 
-You can find the full tutorial code [here](https://github.com/opencv/opencv/blob/master/samples/cpp/tutorial_code/core/how_to_use_OpenCV_parallel_for_/how_to_use_OpenCV_parallel_for_.cpp).
+You can find the full tutorial code [here](https://github.com/opencv/opencv/blob/4.x/samples/cpp/tutorial_code/core/how_to_use_OpenCV_parallel_for_/how_to_use_OpenCV_parallel_for_.cpp).
 The performance of the parallel implementation depends of the type of CPU you have. For instance, on 4 cores / 8 threads
 CPU, you can expect a speed-up of around 6.9X. There are many factors to explain why we do not achieve a speed-up of almost 8X.
 Main reasons should be mostly due to:

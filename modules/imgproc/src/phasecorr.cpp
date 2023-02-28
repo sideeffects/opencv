@@ -1,3 +1,7 @@
+// This file is a part of OpenCV project.
+// See opencv/LICENSE and http://opencv.org/license.html for the actual licensing terms.
+// See also opencv/doc/LICENSE_CHANGE_NOTICE.txt. Below is the original license:
+
 /*********************************************************************
  * Software License Agreement (BSD License)
  *
@@ -78,9 +82,9 @@ static void magSpectrums( InputArray _src, OutputArray _dst)
             {
                 if( k == 1 )
                     dataSrc += cols - 1, dataDst += cols - 1;
-                dataDst[0] = dataSrc[0]*dataSrc[0];
+                dataDst[0] = (float)std::abs(dataSrc[0]);
                 if( rows % 2 == 0 )
-                    dataDst[(rows-1)*stepDst] = dataSrc[(rows-1)*stepSrc]*dataSrc[(rows-1)*stepSrc];
+                    dataDst[(rows-1)*stepDst] = (float)std::abs(dataSrc[(rows-1)*stepSrc]);
 
                 for( j = 1; j <= rows - 2; j += 2 )
                 {
@@ -97,9 +101,9 @@ static void magSpectrums( InputArray _src, OutputArray _dst)
         {
             if( is_1d && cn == 1 )
             {
-                dataDst[0] = dataSrc[0]*dataSrc[0];
+                dataDst[0] = (float)std::abs(dataSrc[0]);
                 if( cols % 2 == 0 )
-                    dataDst[j1] = dataSrc[j1]*dataSrc[j1];
+                    dataDst[j1] = (float)std::abs(dataSrc[j1]);
             }
 
             for( j = j0; j < j1; j += 2 )
@@ -122,9 +126,9 @@ static void magSpectrums( InputArray _src, OutputArray _dst)
             {
                 if( k == 1 )
                     dataSrc += cols - 1, dataDst += cols - 1;
-                dataDst[0] = dataSrc[0]*dataSrc[0];
+                dataDst[0] = std::abs(dataSrc[0]);
                 if( rows % 2 == 0 )
-                    dataDst[(rows-1)*stepDst] = dataSrc[(rows-1)*stepSrc]*dataSrc[(rows-1)*stepSrc];
+                    dataDst[(rows-1)*stepDst] = std::abs(dataSrc[(rows-1)*stepSrc]);
 
                 for( j = 1; j <= rows - 2; j += 2 )
                 {
@@ -141,9 +145,9 @@ static void magSpectrums( InputArray _src, OutputArray _dst)
         {
             if( is_1d && cn == 1 )
             {
-                dataDst[0] = dataSrc[0]*dataSrc[0];
+                dataDst[0] = std::abs(dataSrc[0]);
                 if( cols % 2 == 0 )
-                    dataDst[j1] = dataSrc[j1]*dataSrc[j1];
+                    dataDst[j1] = std::abs(dataSrc[j1]);
             }
 
             for( j = j0; j < j1; j += 2 )
@@ -154,7 +158,7 @@ static void magSpectrums( InputArray _src, OutputArray _dst)
     }
 }
 
-static void divSpectrums( InputArray _srcA, InputArray _srcB, OutputArray _dst, int flags, bool conjB)
+void divSpectrums( InputArray _srcA, InputArray _srcB, OutputArray _dst, int flags, bool conjB)
 {
     Mat srcA = _srcA.getMat(), srcB = _srcB.getMat();
     int depth = srcA.depth(), cn = srcA.channels(), type = srcA.type();
@@ -372,37 +376,57 @@ static void fftShift(InputOutputArray _out)
 
     if(is_1d)
     {
+        int is_odd = (xMid > 0 && out.cols % 2 == 1) || (yMid > 0 && out.rows % 2 == 1);
         xMid = xMid + yMid;
 
         for(size_t i = 0; i < planes.size(); i++)
         {
             Mat tmp;
-            Mat half0(planes[i], Rect(0, 0, xMid, 1));
-            Mat half1(planes[i], Rect(xMid, 0, xMid, 1));
+            Mat half0(planes[i], Rect(0, 0, xMid + is_odd, 1));
+            Mat half1(planes[i], Rect(xMid + is_odd, 0, xMid, 1));
 
             half0.copyTo(tmp);
-            half1.copyTo(half0);
-            tmp.copyTo(half1);
+            half1.copyTo(planes[i](Rect(0, 0, xMid, 1)));
+            tmp.copyTo(planes[i](Rect(xMid, 0, xMid + is_odd, 1)));
         }
     }
     else
     {
+        int isXodd = out.cols % 2 == 1;
+        int isYodd = out.rows % 2 == 1;
         for(size_t i = 0; i < planes.size(); i++)
         {
             // perform quadrant swaps...
-            Mat tmp;
-            Mat q0(planes[i], Rect(0,    0,    xMid, yMid));
-            Mat q1(planes[i], Rect(xMid, 0,    xMid, yMid));
-            Mat q2(planes[i], Rect(0,    yMid, xMid, yMid));
-            Mat q3(planes[i], Rect(xMid, yMid, xMid, yMid));
+            Mat q0(planes[i], Rect(0,    0,    xMid + isXodd, yMid + isYodd));
+            Mat q1(planes[i], Rect(xMid + isXodd, 0,    xMid, yMid + isYodd));
+            Mat q2(planes[i], Rect(0,    yMid + isYodd, xMid + isXodd, yMid));
+            Mat q3(planes[i], Rect(xMid + isXodd, yMid + isYodd, xMid, yMid));
 
-            q0.copyTo(tmp);
-            q3.copyTo(q0);
-            tmp.copyTo(q3);
+            if(!(isXodd || isYodd))
+            {
+                Mat tmp;
+                q0.copyTo(tmp);
+                q3.copyTo(q0);
+                tmp.copyTo(q3);
 
-            q1.copyTo(tmp);
-            q2.copyTo(q1);
-            tmp.copyTo(q2);
+                q1.copyTo(tmp);
+                q2.copyTo(q1);
+                tmp.copyTo(q2);
+            }
+            else
+            {
+                Mat tmp0, tmp1, tmp2 ,tmp3;
+                q0.copyTo(tmp0);
+                q1.copyTo(tmp1);
+                q2.copyTo(tmp2);
+                q3.copyTo(tmp3);
+
+                tmp0.copyTo(planes[i](Rect(xMid, yMid, xMid + isXodd, yMid + isYodd)));
+                tmp3.copyTo(planes[i](Rect(0, 0, xMid, yMid)));
+
+                tmp1.copyTo(planes[i](Rect(0, yMid, xMid, yMid + isYodd)));
+                tmp2.copyTo(planes[i](Rect(xMid, 0, xMid + isXodd, yMid)));
+            }
         }
     }
 
@@ -493,7 +517,7 @@ static Point2d weightedCentroid(InputArray _src, cv::Point peakLocation, cv::Siz
 
 cv::Point2d cv::phaseCorrelate(InputArray _src1, InputArray _src2, InputArray _window, double* response)
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     Mat src1 = _src1.getMat();
     Mat src2 = _src2.getMat();
@@ -576,9 +600,10 @@ cv::Point2d cv::phaseCorrelate(InputArray _src1, InputArray _src2, InputArray _w
 
 void cv::createHanningWindow(OutputArray _dst, cv::Size winSize, int type)
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     CV_Assert( type == CV_32FC1 || type == CV_64FC1 );
+    CV_Assert( winSize.width > 1 && winSize.height > 1 );
 
     _dst.create(winSize, type);
     Mat dst = _dst.getMat();
@@ -586,7 +611,7 @@ void cv::createHanningWindow(OutputArray _dst, cv::Size winSize, int type)
     int rows = dst.rows, cols = dst.cols;
 
     AutoBuffer<double> _wc(cols);
-    double * const wc = (double *)_wc;
+    double* const wc = _wc.data();
 
     double coeff0 = 2.0 * CV_PI / (double)(cols - 1), coeff1 = 2.0f * CV_PI / (double)(rows - 1);
     for(int j = 0; j < cols; j++)

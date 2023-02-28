@@ -41,14 +41,20 @@
 //M*/
 
 #include "../precomp.hpp"
+#include "../op_cuda.hpp"
 #include "layers_common.hpp"
+
+#ifdef HAVE_CUDA
+#include "../cuda4dnn/primitives/split.hpp"
+using namespace cv::dnn::cuda4dnn;
+#endif
 
 namespace cv
 {
 namespace dnn
 {
 
-class SplitLayerImpl : public SplitLayer
+class SplitLayerImpl CV_FINAL : public SplitLayer
 {
 public:
     SplitLayerImpl(const LayerParams &params)
@@ -66,29 +72,61 @@ public:
         }
     }
 
+    virtual bool supportBackend(int backendId) CV_OVERRIDE
+    {
+        return backendId == DNN_BACKEND_OPENCV ||
+               backendId == DNN_BACKEND_CUDA;
+    }
+
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
                          const int requiredOutputs,
                          std::vector<MatShape> &outputs,
-                         std::vector<MatShape> &internals) const
+                         std::vector<MatShape> &internals) const CV_OVERRIDE
     {
         CV_Assert(inputs.size() == 1);
 
         Layer::getMemoryShapes(inputs, max(1, outputsCount >= 0 ? outputsCount : requiredOutputs),
                                outputs, internals);
-        return true;
+        return false;
     }
 
-    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
         CV_TRACE_ARG_VALUE(name, "name", name.c_str());
 
+        std::vector<Mat> inputs, outputs;
+        inputs_arr.getMatVector(inputs);
+        outputs_arr.getMatVector(outputs);
         for (size_t i = 0; i < outputs.size(); i++)
         {
-            CV_Assert(inputs[0]->total() == outputs[i].total());
-            if (outputs[i].data != inputs[0]->data)
-                inputs[0]->copyTo(outputs[i]);
+            CV_Assert(inputs[0].total() == outputs[i].total());
+            inputs[0].copyTo(outputs[i]);
         }
+    }
+
+#ifdef HAVE_CUDA
+    Ptr<BackendNode> initCUDA(
+        void *context_,
+        const std::vector<Ptr<BackendWrapper>>& inputs,
+        const std::vector<Ptr<BackendWrapper>>& outputs
+    ) override
+    {
+        auto context = reinterpret_cast<csl::CSLContext*>(context_);
+        return make_cuda_node<cuda4dnn::SplitOp>(preferableTarget, std::move(context->stream));
+    }
+#endif
+
+    virtual bool tryQuantize(const std::vector<std::vector<float> > &scales,
+                             const std::vector<std::vector<int> > &zeropoints, LayerParams& params) CV_OVERRIDE
+    {
+        const int numOutputs = scales[1].size();
+        for (int i = 0; i < numOutputs; i++)
+        {
+            if (scales[1][i] != scales[0][0])
+             return false;
+        }
+        return true;
     }
 };
 

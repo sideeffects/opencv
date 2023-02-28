@@ -71,9 +71,17 @@ static void applyFuse(const FileNode& directive, Halide::Func& func)
 static void applyParallel(const FileNode& directive, Halide::Func& func)
 {
     std::string varName;
-    for (int i = 0, n = directive.size(); i < n; ++i)
+    if (directive.isSeq())
     {
-        directive[i] >> varName;
+        for (int i = 0, n = directive.size(); i < n; ++i)
+        {
+            directive[i] >> varName;
+            func.parallel(Halide::Var(varName));
+        }
+    }
+    else
+    {
+        directive >> varName;
         func.parallel(Halide::Var(varName));
     }
 }
@@ -81,9 +89,17 @@ static void applyParallel(const FileNode& directive, Halide::Func& func)
 static void applyUnroll(const FileNode& directive, Halide::Func& func)
 {
     std::string varName;
-    for (int i = 0, n = directive.size(); i < n; ++i)
+    if (directive.isSeq())
     {
-        directive[i] >> varName;
+        for (int i = 0, n = directive.size(); i < n; ++i)
+        {
+            directive[i] >> varName;
+            func.unroll(Halide::Var(varName));
+        }
+    }
+    else
+    {
+        directive >> varName;
         func.unroll(Halide::Var(varName));
     }
 }
@@ -242,7 +258,7 @@ bool HalideScheduler::process(Ptr<BackendNode>& node)
     std::map<std::string, Halide::Func> funcsMap;  // Scheduled functions.
     // For every function, from top to bottom, we try to find a scheduling node.
     // Scheduling is successful (return true) if for the first function (top)
-    // node is respresented.
+    // node is represented.
     CV_Assert(!node.empty());
     std::vector<Halide::Func>& funcs = node.dynamicCast<HalideBackendNode>()->funcs;
     for (int i = funcs.size() - 1; i >= 0; --i)

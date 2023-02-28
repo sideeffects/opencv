@@ -55,6 +55,11 @@ BaseImageDecoder::BaseImageDecoder()
     m_scale_denom = 1;
 }
 
+
+ExifEntry_t BaseImageDecoder::getExifTag(const ExifTagName tag) const
+{
+    return m_exif.getTag(tag);
+}
 bool BaseImageDecoder::setSource( const String& filename )
 {
     m_filename = filename;
@@ -127,6 +132,11 @@ bool BaseImageEncoder::setDestination( std::vector<uchar>& buf )
     return true;
 }
 
+bool BaseImageEncoder::writemulti(const std::vector<Mat>&, const std::vector<int>& )
+{
+    return false;
+}
+
 ImageEncoder BaseImageEncoder::newEncoder() const
 {
     return ImageEncoder();
@@ -137,7 +147,7 @@ void BaseImageEncoder::throwOnEror() const
     if(!m_last_error.empty())
     {
         String msg = "Raw image encoder error: " + m_last_error;
-        CV_Error( CV_BadImageSize, msg.c_str() );
+        CV_Error( Error::BadImageSize, msg.c_str() );
     }
 }
 

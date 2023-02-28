@@ -42,7 +42,8 @@
 //M*/
 
 #include "test_precomp.hpp"
-#include <time.h>
+
+namespace opencv_test { namespace {
 
 #define CALIB3D_HOMOGRAPHY_ERROR_MATRIX_SIZE 1
 #define CALIB3D_HOMOGRAPHY_ERROR_MATRIX_DIFF 2
@@ -62,6 +63,7 @@
 #define MESSAGE_RANSAC_DIFF "Reprojection error for current pair of points more than required."
 
 #define MAX_COUNT_OF_POINTS 303
+#define MIN_COUNT_OF_POINTS 4
 #define COUNT_NORM_TYPES 3
 #define METHODS_COUNT 4
 
@@ -190,7 +192,7 @@ void CV_HomographyTest::print_information_4(int _method, int j, int N, int k, in
     cout << "Number of point: " << k << endl;
     cout << "Norm type using in criteria: "; if (NORM_TYPE[l] == 1) cout << "INF"; else if (NORM_TYPE[l] == 2) cout << "L1"; else cout << "L2"; cout << endl;
     cout << "Difference with noise of point: " << diff << endl;
-    cout << "Maxumum allowed difference: " << max_2diff << endl; cout << endl;
+    cout << "Maximum allowed difference: " << max_2diff << endl; cout << endl;
 }
 
 void CV_HomographyTest::print_information_5(int _method, int j, int N, int l, double diff)
@@ -203,7 +205,7 @@ void CV_HomographyTest::print_information_5(int _method, int j, int N, int l, do
     cout << "Count of points: " << N << endl;
     cout << "Norm type using in criteria: "; if (NORM_TYPE[l] == 1) cout << "INF"; else if (NORM_TYPE[l] == 2) cout << "L1"; else cout << "L2"; cout << endl;
     cout << "Difference with noise of points: " << diff << endl;
-    cout << "Maxumum allowed difference: " << max_diff << endl; cout << endl;
+    cout << "Maximum allowed difference: " << max_diff << endl; cout << endl;
 }
 
 void CV_HomographyTest::print_information_6(int _method, int j, int N, int k, double diff, bool value)
@@ -243,12 +245,12 @@ void CV_HomographyTest::print_information_8(int _method, int j, int N, int k, in
     cout << "Number of point: " << k << "   " << endl;
     cout << "Norm type using in criteria: "; if (NORM_TYPE[l] == 1) cout << "INF"; else if (NORM_TYPE[l] == 2) cout << "L1"; else cout << "L2"; cout << endl;
     cout << "Difference with noise of point: " << diff << endl;
-    cout << "Maxumum allowed difference: " << max_2diff << endl; cout << endl;
+    cout << "Maximum allowed difference: " << max_2diff << endl; cout << endl;
 }
 
 void CV_HomographyTest::run(int)
 {
-    for (int N = 4; N <= MAX_COUNT_OF_POINTS; ++N)
+    for (int N = MIN_COUNT_OF_POINTS; N <= MAX_COUNT_OF_POINTS; ++N)
     {
         RNG& rng = ts->get_rng();
 
@@ -622,7 +624,7 @@ TEST(Calib3d_Homography, EKcase)
     Mat h = findHomography(p1, p2, RANSAC, 0.01, mask);
     ASSERT_TRUE(!h.empty());
 
-    transpose(mask, mask);
+    cv::transpose(mask, mask);
     Mat p3, mask2;
     int ninliers = countNonZero(mask);
     Mat nmask[] = { mask, mask };
@@ -631,7 +633,7 @@ TEST(Calib3d_Homography, EKcase)
     mask2 = mask2.reshape(1);
     p2 = p2.reshape(1);
     p3 = p3.reshape(1);
-    double err = norm(p2, p3, NORM_INF, mask2);
+    double err = cvtest::norm(p2, p3, NORM_INF, mask2);
 
     printf("ninliers: %d, inliers err: %.2g\n", ninliers, err);
     ASSERT_GE(ninliers, 10);
@@ -709,3 +711,28 @@ TEST(Calib3d_Homography, fromImages)
     ASSERT_TRUE(!H1.empty());
     ASSERT_GE(ninliers1, 80);
 }
+
+TEST(Calib3d_Homography, minPoints)
+{
+    float pt1data[] =
+    {
+        2.80073029e+002f, 2.39591217e+002f, 2.21912201e+002f, 2.59783997e+002f
+    };
+
+    float pt2data[] =
+    {
+        1.84072723e+002f, 1.43591202e+002f, 1.25912483e+002f, 1.63783859e+002f
+    };
+
+    int npoints = (int)(sizeof(pt1data)/sizeof(pt1data[0])/2);
+    printf("npoints = %d\n", npoints);  // npoints = 2
+
+    Mat p1(1, npoints, CV_32FC2, pt1data);
+    Mat p2(1, npoints, CV_32FC2, pt2data);
+    Mat mask;
+
+    // findHomography should raise an error since npoints < MIN_COUNT_OF_POINTS
+    EXPECT_THROW(findHomography(p1, p2, RANSAC, 0.01, mask), cv::Exception);
+}
+
+}} // namespace

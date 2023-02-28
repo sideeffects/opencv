@@ -29,18 +29,41 @@ file(GLOB lib_hdrs *.h)
 
 
 if(ARM OR AARCH64)
-  if(ENABLE_NEON AND NOT AARCH64)
-    list(APPEND lib_srcs arm/arm_init.c arm/filter_neon.S arm/filter_neon_intrinsics.c)
+  if(ENABLE_NEON)
+    if(NOT AARCH64)
+      list(APPEND lib_srcs arm/filter_neon.S)
+    endif()
+    list(APPEND lib_srcs arm/arm_init.c arm/filter_neon_intrinsics.c arm/palette_neon_intrinsics.c)
     add_definitions(-DPNG_ARM_NEON_OPT=2)
   else()
     add_definitions(-DPNG_ARM_NEON_OPT=0) # NEON assembler is not supported
   endif()
 endif()
 
-if(ENABLE_SSE
+if(";${CPU_BASELINE_FINAL};" MATCHES "SSE2"
     AND (NOT MSVC OR (MSVC_VERSION GREATER 1799))) # MSVS2013+ (issue #7232)
-  list(APPEND lib_srcs contrib/intel/intel_init.c contrib/intel/filter_sse2_intrinsics.c)
+  list(APPEND lib_srcs intel/intel_init.c intel/filter_sse2_intrinsics.c)
   add_definitions(-DPNG_INTEL_SSE)
+endif()
+
+# set definitions and sources for MIPS
+if(";${CPU_BASELINE_FINAL};" MATCHES "MSA")
+    list(APPEND lib_srcs mips/mips_init.c mips/filter_msa_intrinsics.c)
+    add_definitions(-DPNG_MIPS_MSA_OPT=2)
+    ocv_warnings_disable(CMAKE_C_FLAGS -Wshadow)
+else()
+    add_definitions(-DPNG_MIPS_MSA_OPT=0)
+endif()
+
+if(PPC64LE OR PPC64)
+  # VSX3 features are backwards compatible
+  if(";${CPU_BASELINE_FINAL};" MATCHES "VSX.*"
+      AND NOT PPC64)
+    list(APPEND lib_srcs powerpc/powerpc_init.c powerpc/filter_vsx_intrinsics.c)
+    add_definitions(-DPNG_POWERPC_VSX_OPT=2)
+  else()
+    add_definitions(-DPNG_POWERPC_VSX_OPT=0)
+  endif()
 endif()
 
 # ----------------------------------------------------------------------------------
@@ -51,16 +74,14 @@ if(MSVC)
   add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
 endif(MSVC)
 
-add_library(${PNG_LIBRARY} STATIC ${lib_srcs} ${lib_hdrs})
+add_library(${PNG_LIBRARY} STATIC ${OPENCV_3RDPARTY_EXCLUDE_FROM_ALL} ${lib_srcs} ${lib_hdrs})
 target_link_libraries(${PNG_LIBRARY} ${ZLIB_LIBRARIES})
 
-if(UNIX)
-  if(CMAKE_COMPILER_IS_GNUCXX OR CV_ICC)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-  endif()
-endif()
-
-ocv_warnings_disable(CMAKE_C_FLAGS -Wcast-align)
+ocv_warnings_disable(CMAKE_C_FLAGS -Wundef -Wcast-align -Wimplicit-fallthrough -Wunused-parameter -Wsign-compare
+    -Wmaybe-uninitialized
+    -Wnull-pointer-subtraction                   # clang15
+    -Wunused-but-set-variable                    # clang15
+)
 
 set_target_properties(${PNG_LIBRARY}
   PROPERTIES OUTPUT_NAME ${PNG_LIBRARY}
@@ -75,5 +96,7 @@ if(ENABLE_SOLUTION_FOLDERS)
 endif()
 
 if(NOT BUILD_SHARED_LIBS)
-  ocv_install_target(${PNG_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev)
+  ocv_install_target(${PNG_LIBRARY} EXPORT OpenCVModules ARCHIVE DESTINATION ${OPENCV_3P_LIB_INSTALL_PATH} COMPONENT dev OPTIONAL)
 endif()
+
+ocv_install_3rdparty_licenses(libpng LICENSE README)

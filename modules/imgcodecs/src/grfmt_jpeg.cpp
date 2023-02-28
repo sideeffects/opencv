@@ -44,6 +44,8 @@
 
 #ifdef HAVE_JPEG
 
+#include <opencv2/core/utils/logger.hpp>
+
 #ifdef _MSC_VER
 //interaction between '_setjmp' and C++ object destruction is non-portable
 #pragma warning(disable: 4611)
@@ -52,7 +54,7 @@
 #include <stdio.h>
 #include <setjmp.h>
 
-// the following defines are a hack to avoid multiple problems with frame ponter handling and setjmp
+// the following defines are a hack to avoid multiple problems with frame pointer handling and setjmp
 // see http://gcc.gnu.org/ml/gcc/2011-10/msg00324.html for some details
 #define mingw_getsp(...) 0
 #define __builtin_frame_address(...) 0
@@ -75,21 +77,25 @@ extern "C" {
 #include "jpeglib.h"
 }
 
+#ifndef CV_MANUAL_JPEG_STD_HUFF_TABLES
+  #if defined(LIBJPEG_TURBO_VERSION_NUMBER) && LIBJPEG_TURBO_VERSION_NUMBER >= 1003090
+    #define CV_MANUAL_JPEG_STD_HUFF_TABLES 0  // libjpeg-turbo handles standard huffman tables itself (jstdhuff.c)
+  #else
+    #define CV_MANUAL_JPEG_STD_HUFF_TABLES 1
+  #endif
+#endif
+#if CV_MANUAL_JPEG_STD_HUFF_TABLES == 0
+  #undef CV_MANUAL_JPEG_STD_HUFF_TABLES
+#endif
+
 namespace cv
 {
 
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable:4324) //structure was padded due to __declspec(align())
-#endif
 struct JpegErrorMgr
 {
     struct jpeg_error_mgr pub;
     jmp_buf setjmp_buffer;
 };
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
 
 struct JpegSource
 {
@@ -240,6 +246,7 @@ bool  JpegDecoder::readHeader()
 
         if (state->cinfo.src != 0)
         {
+            jpeg_save_markers(&state->cinfo, APP1, 0xffff);
             jpeg_read_header( &state->cinfo, TRUE );
 
             state->cinfo.scale_num=1;
@@ -253,12 +260,10 @@ bool  JpegDecoder::readHeader()
         }
     }
 
-    if( !result )
-        close();
-
     return result;
 }
 
+#ifdef CV_MANUAL_JPEG_STD_HUFF_TABLES
 /***************************************************************************
  * following code is for supporting MJPEG image files
  * based on a message of Laurent Pinchart on the video4linux mailing list
@@ -392,11 +397,12 @@ int my_jpeg_load_dht (struct jpeg_decompress_struct *info, unsigned char *dht,
  * end of code for supportting MJPEG image files
  * based on a message of Laurent Pinchart on the video4linux mailing list
  ***************************************************************************/
+#endif  // CV_MANUAL_JPEG_STD_HUFF_TABLES
 
 bool  JpegDecoder::readData( Mat& img )
 {
     volatile bool result = false;
-    int step = (int)img.step;
+    size_t step = img.step;
     bool color = img.channels() > 1;
 
     if( m_state && m_width && m_height )
@@ -407,6 +413,7 @@ bool  JpegDecoder::readData( Mat& img )
 
         if( setjmp( jerr->setjmp_buffer ) == 0 )
         {
+#ifdef CV_MANUAL_JPEG_STD_HUFF_TABLES
             /* check if this is a mjpeg image format */
             if ( cinfo->ac_huff_tbl_ptrs[0] == NULL &&
                 cinfo->ac_huff_tbl_ptrs[1] == NULL &&
@@ -420,6 +427,7 @@ bool  JpegDecoder::readData( Mat& img )
                     cinfo->ac_huff_tbl_ptrs,
                     cinfo->dc_huff_tbl_ptrs );
             }
+#endif
 
             if( color )
             {
@@ -448,6 +456,29 @@ bool  JpegDecoder::readData( Mat& img )
                 }
             }
 
+            // Check for Exif marker APP1
+            jpeg_saved_marker_ptr exif_marker = NULL;
+            jpeg_saved_marker_ptr cmarker = cinfo->marker_list;
+            while( cmarker && exif_marker == NULL )
+            {
+                if (cmarker->marker == APP1)
+                    exif_marker = cmarker;
+
+                cmarker = cmarker->next;
+            }
+
+            // Parse Exif data
+            if( exif_marker )
+            {
+                const std::streamsize offsetToTiffHeader = 6; //bytes from Exif size field to the first TIFF header
+
+                if (exif_marker->data_length > offsetToTiffHeader)
+                {
+                    m_exif.parseExif(exif_marker->data + offsetToTiffHeader, exif_marker->data_length - offsetToTiffHeader);
+                }
+            }
+
+
             jpeg_start_decompress( cinfo );
 
             buffer = (*cinfo->mem->alloc_sarray)((j_common_ptr)cinfo,
@@ -460,16 +491,16 @@ bool  JpegDecoder::readData( Mat& img )
                 if( color )
                 {
                     if( cinfo->out_color_components == 3 )
-                        icvCvt_RGB2BGR_8u_C3R( buffer[0], 0, data, 0, cvSize(m_width,1) );
+                        icvCvt_RGB2BGR_8u_C3R( buffer[0], 0, data, 0, Size(m_width,1) );
                     else
-                        icvCvt_CMYK2BGR_8u_C4C3R( buffer[0], 0, data, 0, cvSize(m_width,1) );
+                        icvCvt_CMYK2BGR_8u_C4C3R( buffer[0], 0, data, 0, Size(m_width,1) );
                 }
                 else
                 {
                     if( cinfo->out_color_components == 1 )
                         memcpy( data, buffer[0], m_width );
                     else
-                        icvCvt_CMYK2Gray_8u_C4C1R( buffer[0], 0, data, 0, cvSize(m_width,1) );
+                        icvCvt_CMYK2Gray_8u_C4C1R( buffer[0], 0, data, 0, Size(m_width,1) );
                 }
             }
 
@@ -478,7 +509,6 @@ bool  JpegDecoder::readData( Mat& img )
         }
     }
 
-    close();
     return result;
 }
 
@@ -570,9 +600,9 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
     JpegErrorMgr jerr;
     JpegDestination dest;
 
-    jpeg_create_compress(&cinfo);
     cinfo.err = jpeg_std_error(&jerr.pub);
     jerr.pub.error_exit = error_exit;
+    jpeg_create_compress(&cinfo);
 
     if( !m_buf )
     {
@@ -608,26 +638,27 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
         int rst_interval = 0;
         int luma_quality = -1;
         int chroma_quality = -1;
+        uint32_t sampling_factor = 0; // same as 0x221111
 
         for( size_t i = 0; i < params.size(); i += 2 )
         {
-            if( params[i] == CV_IMWRITE_JPEG_QUALITY )
+            if( params[i] == IMWRITE_JPEG_QUALITY )
             {
                 quality = params[i+1];
                 quality = MIN(MAX(quality, 0), 100);
             }
 
-            if( params[i] == CV_IMWRITE_JPEG_PROGRESSIVE )
+            if( params[i] == IMWRITE_JPEG_PROGRESSIVE )
             {
                 progressive = params[i+1];
             }
 
-            if( params[i] == CV_IMWRITE_JPEG_OPTIMIZE )
+            if( params[i] == IMWRITE_JPEG_OPTIMIZE )
             {
                 optimize = params[i+1];
             }
 
-            if( params[i] == CV_IMWRITE_JPEG_LUMA_QUALITY )
+            if( params[i] == IMWRITE_JPEG_LUMA_QUALITY )
             {
                 if (params[i+1] >= 0)
                 {
@@ -642,7 +673,7 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
                 }
             }
 
-            if( params[i] == CV_IMWRITE_JPEG_CHROMA_QUALITY )
+            if( params[i] == IMWRITE_JPEG_CHROMA_QUALITY )
             {
                 if (params[i+1] >= 0)
                 {
@@ -650,10 +681,31 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
                 }
             }
 
-            if( params[i] == CV_IMWRITE_JPEG_RST_INTERVAL )
+            if( params[i] == IMWRITE_JPEG_RST_INTERVAL )
             {
                 rst_interval = params[i+1];
                 rst_interval = MIN(MAX(rst_interval, 0), 65535L);
+            }
+
+            if( params[i] == IMWRITE_JPEG_SAMPLING_FACTOR )
+            {
+                sampling_factor = static_cast<uint32_t>(params[i+1]);
+
+                switch ( sampling_factor )
+                {
+                    case IMWRITE_JPEG_SAMPLING_FACTOR_411:
+                    case IMWRITE_JPEG_SAMPLING_FACTOR_420:
+                    case IMWRITE_JPEG_SAMPLING_FACTOR_422:
+                    case IMWRITE_JPEG_SAMPLING_FACTOR_440:
+                    case IMWRITE_JPEG_SAMPLING_FACTOR_444:
+                    // OK.
+                    break;
+
+                    default:
+                    CV_LOG_WARNING(NULL, cv::format("Unknown value for IMWRITE_JPEG_SAMPLING_FACTOR: 0x%06x", sampling_factor ) );
+                    sampling_factor = 0;
+                    break;
+                }
             }
         }
 
@@ -666,6 +718,14 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
             jpeg_simple_progression( &cinfo );
         if( optimize )
             cinfo.optimize_coding = TRUE;
+
+        if( (channels > 1) && ( sampling_factor != 0 ) )
+        {
+            cinfo.comp_info[0].v_samp_factor = (sampling_factor >> 16 ) & 0xF;
+            cinfo.comp_info[0].h_samp_factor = (sampling_factor >> 20 ) & 0xF;
+            cinfo.comp_info[1].v_samp_factor = 1;
+            cinfo.comp_info[1].h_samp_factor = 1;
+        }
 
 #if JPEG_LIB_VERSION >= 70
         if (luma_quality >= 0 && chroma_quality >= 0)
@@ -688,7 +748,7 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
 
         if( channels > 1 )
             _buffer.allocate(width*channels);
-        buffer = _buffer;
+        buffer = _buffer.data();
 
         for( int y = 0; y < height; y++ )
         {
@@ -696,12 +756,12 @@ bool JpegEncoder::write( const Mat& img, const std::vector<int>& params )
 
             if( _channels == 3 )
             {
-                icvCvt_BGR2RGB_8u_C3R( data, 0, buffer, 0, cvSize(width,1) );
+                icvCvt_BGR2RGB_8u_C3R( data, 0, buffer, 0, Size(width,1) );
                 ptr = buffer;
             }
             else if( _channels == 4 )
             {
-                icvCvt_BGRA2BGR_8u_C4C3R( data, 0, buffer, 0, cvSize(width,1), 2 );
+                icvCvt_BGRA2BGR_8u_C4C3R( data, 0, buffer, 0, Size(width,1), 2 );
                 ptr = buffer;
             }
 

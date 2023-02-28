@@ -2,7 +2,7 @@
  * jutils.c
  *
  * Copyright (C) 1991-1996, Thomas G. Lane.
- * Modified 2009-2011 by Guido Vollbeding.
+ * Modified 2009-2019 by Guido Vollbeding.
  * This file is part of the Independent JPEG Group's software.
  * For conditions of distribution and use, see the accompanying README file.
  *
@@ -175,8 +175,8 @@ jzero_far (void FAR * target, size_t bytestozero)
 
 GLOBAL(void)
 jcopy_sample_rows (JSAMPARRAY input_array, int source_row,
-                   JSAMPARRAY output_array, int dest_row,
-                   int num_rows, JDIMENSION num_cols)
+		   JSAMPARRAY output_array, int dest_row,
+		   int num_rows, JDIMENSION num_cols)
 /* Copy some rows of samples from one place to another.
  * num_rows rows are copied from input_array[source_row++]
  * to output_array[dest_row++]; these areas may overlap for duplication.
@@ -185,7 +185,7 @@ jcopy_sample_rows (JSAMPARRAY input_array, int source_row,
 {
   register JSAMPROW inptr, outptr;
 #ifdef FMEMCOPY
-  register size_t count = (size_t) (num_cols * SIZEOF(JSAMPLE));
+  register size_t count = (size_t) num_cols * SIZEOF(JSAMPLE);
 #else
   register JDIMENSION count;
 #endif
@@ -209,11 +209,11 @@ jcopy_sample_rows (JSAMPARRAY input_array, int source_row,
 
 GLOBAL(void)
 jcopy_block_row (JBLOCKROW input_row, JBLOCKROW output_row,
-                 JDIMENSION num_blocks)
+		 JDIMENSION num_blocks)
 /* Copy a row of coefficient blocks from one place to another. */
 {
 #ifdef FMEMCOPY
-  FMEMCOPY(output_row, input_row, num_blocks * (DCTSIZE2 * SIZEOF(JCOEF)));
+  FMEMCOPY(output_row, input_row, (size_t) num_blocks * (DCTSIZE2 * SIZEOF(JCOEF)));
 #else
   register JCOEFPTR inptr, outptr;
   register long count;

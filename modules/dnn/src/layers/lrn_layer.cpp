@@ -42,18 +42,34 @@
 
 #include "../precomp.hpp"
 #include "layers_common.hpp"
-#include "op_halide.hpp"
+#include "../op_cuda.hpp"
+#include "../op_halide.hpp"
+#include "../op_inf_engine.hpp"
+#include "../ie_ngraph.hpp"
+#include "../op_vkcom.hpp"
+#include "../op_cann.hpp"
+
 #include "opencv2/imgproc.hpp"
 #include "opencv2/dnn/shape_utils.hpp"
 #include "opencv2/core/hal/hal.hpp"
 #include <algorithm>
+
+#ifdef HAVE_OPENCL
+#include "opencl_kernels_dnn.hpp"
+using namespace cv::dnn::ocl4dnn;
+#endif
+
+#ifdef HAVE_CUDA
+#include "../cuda4dnn/primitives/lrn.hpp"
+using namespace cv::dnn::cuda4dnn;
+#endif
 
 namespace cv
 {
 namespace dnn
 {
 
-class LRNLayerImpl : public LRNLayer
+class LRNLayerImpl CV_FINAL : public LRNLayer
 {
 public:
     LRNLayerImpl(const LayerParams& params)
@@ -62,9 +78,9 @@ public:
         type = -1;
         String nrmType = params.get<String>("norm_region", "ACROSS_CHANNELS");
         if (nrmType == "ACROSS_CHANNELS")
-            type = LRNLayer::CHANNEL_NRM;
+            type = CHANNEL_NRM;
         else if (nrmType == "WITHIN_CHANNEL")
-            type = LRNLayer::SPATIAL_NRM;
+            type = SPATIAL_NRM;
         else
             CV_Error(Error::StsBadArg, "Unknown region type \"" + nrmType + "\"");
 
@@ -72,29 +88,102 @@ public:
         if (size % 2 != 1 || size <= 0)
             CV_Error(Error::StsBadArg, "LRN layer supports only positive odd values for local_size");
 
-        alpha = params.get<double>("alpha", 1);
+        alpha = params.get<double>("alpha", 0.0001);
         beta = params.get<double>("beta", 0.75);
         bias = params.get<double>("bias", 1);
         normBySize = params.get<bool>("norm_by_size", true);
     }
 
-    virtual bool supportBackend(int backendId)
+#ifdef HAVE_OPENCL
+    Ptr<OCL4DNNLRN<float> > lrnOp;
+#endif
+
+    virtual bool supportBackend(int backendId) CV_OVERRIDE
     {
-        return backendId == DNN_BACKEND_DEFAULT ||
-               backendId == DNN_BACKEND_HALIDE && haveHalide();
+#ifdef HAVE_INF_ENGINE
+        if (backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH)
+            return bias == (int)bias;
+#endif
+        return backendId == DNN_BACKEND_OPENCV ||
+               backendId == DNN_BACKEND_CUDA ||
+               backendId == DNN_BACKEND_HALIDE ||
+               (backendId == DNN_BACKEND_VKCOM && haveVulkan() && (size % 2 == 1) && (type == CHANNEL_NRM)) ||
+               backendId == DNN_BACKEND_CANN;
     }
 
-    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+#ifdef HAVE_OPENCL
+    virtual void finalize(InputArrayOfArrays, OutputArrayOfArrays) CV_OVERRIDE
+    {
+        lrnOp.release();
+    }
+
+    bool forward_ocl(InputArrayOfArrays inps, OutputArrayOfArrays outs, OutputArrayOfArrays internals)
+    {
+        std::vector<UMat> inputs;
+        std::vector<UMat> outputs;
+
+        bool use_half = (inps.depth() == CV_16S);
+        inps.getUMatVector(inputs);
+        outs.getUMatVector(outputs);
+
+        if (lrnOp.empty())
+        {
+            OCL4DNNLRNConfig config;
+            config.lrn_type = type == CHANNEL_NRM ?
+                              LRNParameter_NormRegion_ACROSS_CHANNELS :
+                              LRNParameter_NormRegion_WITHIN_CHANNEL;
+
+            CHECK_EQ(size % 2, 1)<< "LRN only supports odd values for local_size";
+            config.local_size = size;
+            config.alpha = alpha;
+            config.beta = beta;
+            config.k = bias;
+            CHECK_EQ(4, inputs[0].dims) << "Input must have 4 axes, "
+                     << "corresponding to (num, channels, height, width)";
+            config.batch_size = inputs[0].size[0];
+            config.channels = inputs[0].size[1];
+            config.height = inputs[0].size[2];
+            config.width = inputs[0].size[3];
+            config.norm_by_size = normBySize;
+            config.use_half = use_half;
+
+            lrnOp = Ptr<OCL4DNNLRN<float> >(new OCL4DNNLRN<float>(config));
+        }
+
+        if (!lrnOp->Forward(inputs[0], outputs[0]))
+            return false;
+
+        return true;
+    }
+#endif
+
+    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr) CV_OVERRIDE
     {
         CV_TRACE_FUNCTION();
         CV_TRACE_ARG_VALUE(name, "name", name.c_str());
 
+        CV_Assert(inputs_arr.total() == outputs_arr.total());
+
+        CV_OCL_RUN(IS_DNN_OPENCL_TARGET(preferableTarget),
+                   forward_ocl(inputs_arr, outputs_arr, internals_arr))
+
+        if (inputs_arr.depth() == CV_16S)
+        {
+            forward_fallback(inputs_arr, outputs_arr, internals_arr);
+            return;
+        }
+
+        std::vector<Mat> inputs, outputs;
+        inputs_arr.getMatVector(inputs);
+        outputs_arr.getMatVector(outputs);
+
         CV_Assert(inputs.size() == outputs.size());
+
         for (int i = 0; i < inputs.size(); i++)
         {
-            CV_Assert(inputs[i]->dims == 4);
+            CV_Assert(inputs[i].dims == 4);
 
-            Mat &src = *inputs[i];
+            Mat &src = inputs[i];
             Mat &dst = outputs[i];
 
             switch (type)
@@ -126,7 +215,7 @@ public:
             planeSize_ = planeSize; nsamples_ = nsamples; nstripes_ = nstripes;
         }
 
-        void operator()(const Range& r) const
+        void operator()(const Range& r) const CV_OVERRIDE
         {
             int nsamples = nsamples_, nstripes = nstripes_;
             size_t planeSize = planeSize_, planeSize_n = planeSize * nsamples;
@@ -138,8 +227,8 @@ public:
             float alpha1 = alpha1_, bias1 = bias1_, beta1 = beta1_;
             int k, channels = channels_, ksize = ksize_;
 
-            AutoBuffer<float> buf_((channels + ksize*2 + 4)*2);
-            float* acc = (float*)buf_;
+            AutoBuffer<float> buf_((channels + ksize + 1)*2);
+            float* acc = buf_.data();
             float* buf = acc + channels + ksize + 1;
             for( k = 0; k <= ksize; k++ )
                 buf[-k-1] = buf[channels + k] = 0.f;
@@ -233,7 +322,56 @@ public:
         }
     }
 
-    virtual Ptr<BackendNode> initHalide(const std::vector<Ptr<BackendWrapper> > &inputs)
+#ifdef HAVE_CUDA
+    Ptr<BackendNode> initCUDA(
+        void *context_,
+        const std::vector<Ptr<BackendWrapper>>& inputs,
+        const std::vector<Ptr<BackendWrapper>>& outputs
+    ) override
+    {
+        auto context = reinterpret_cast<csl::CSLContext*>(context_);
+
+        cuda4dnn::LRNType type_;
+        if (type == CHANNEL_NRM)
+            type_ = cuda4dnn::LRNType::ACROSS_CHANNELS;
+        else if (type == SPATIAL_NRM)
+            type_ = cuda4dnn::LRNType::WITHIN_CHANNEL;
+        else
+            CV_Error(Error::StsNotImplemented, "Unknown normalization region");
+
+        float alphaSize = alpha;
+        if (!normBySize) {
+            switch (type) {
+            case CHANNEL_NRM: alphaSize = alpha * size; break;
+            case SPATIAL_NRM: alphaSize = alpha * size * size; break;
+            }
+        }
+
+        std::size_t largestInputSize = 0;
+        for(auto& wrapper : inputs) {
+            auto input_wrapper = wrapper.dynamicCast<CUDABackendWrapper>();
+            auto shape = input_wrapper->getShape();
+            largestInputSize = std::max<std::size_t>(
+                largestInputSize,
+                std::accumulate(std::begin(shape), std::end(shape), 1, std::multiplies<int>())
+            );
+        }
+
+        return make_cuda_node<cuda4dnn::LRNOp>(preferableTarget,
+            std::move(context->cudnn_handle), type_, size, alphaSize, beta, bias, largestInputSize);
+    }
+#endif
+
+    virtual Ptr<BackendNode> initVkCom(const std::vector<Ptr<BackendWrapper> > &inputs) CV_OVERRIDE
+    {
+#ifdef HAVE_VULKAN
+        std::shared_ptr<vkcom::OpBase> op(new vkcom::OpLRN(size / 2, bias, alpha, beta, normBySize));
+        return Ptr<BackendNode>(new VkComBackendNode(inputs, op));
+#endif
+        return Ptr<BackendNode>();
+    }
+
+    virtual Ptr<BackendNode> initHalide(const std::vector<Ptr<BackendWrapper> > &inputs) CV_OVERRIDE
     {
 #ifdef HAVE_HALIDE
         float alphaSize = alpha;
@@ -277,7 +415,7 @@ public:
     virtual void applyHalideScheduler(Ptr<BackendNode>& node,
                                       const std::vector<Mat*> &inputs,
                                       const std::vector<Mat> &outputs,
-                                      int targetId) const
+                                      int targetId) const CV_OVERRIDE
     {
 #ifdef  HAVE_HALIDE
         if (targetId != DNN_TARGET_CPU)
@@ -306,10 +444,64 @@ public:
 #endif  // HAVE_HALIDE
     }
 
-    virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
-                           const std::vector<MatShape> &outputs) const
+#ifdef HAVE_CANN
+    virtual Ptr<BackendNode> initCann(const std::vector<Ptr<BackendWrapper> > &inputsWrapper, const int index, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
     {
-        (void)outputs; // suppress unused variable warning
+        auto x = inputsWrapper[0].dynamicCast<CannBackendWrapper>();
+
+        // create operator
+        std::string op_name = cv::format("lrn_%d", index);
+        auto op = std::make_shared<ge::op::LRN>(op_name);
+
+        // set attributes
+        op->set_attr_depth_radius(size);
+        op->set_attr_bias(bias);
+        op->set_attr_alpha(alpha);
+        op->set_attr_beta(beta);
+        op->set_attr_norm_region("ACROSS_CHANNELS");
+        if (type == SPATIAL_NRM)
+            op->set_attr_norm_region("WITHIN_CHANNEL");
+
+        // set inputs
+        // set inputs : x
+        auto op_x = nodes[0].dynamicCast<CannBackendNode>()->getOp();
+        op->set_input_x_by_name(*op_x, "y");
+        auto x_desc = x->getTensorDesc();
+        op->update_input_desc_x(*x_desc);
+
+        // set outputs
+        auto output_y_desc = std::make_shared<ge::TensorDesc>(ge::Shape(), ge::FORMAT_NCHW, ge::DT_FLOAT);
+        op->update_output_desc_y(*output_y_desc);
+
+        return Ptr<BackendNode>(new CannBackendNode(op));
+    }
+#endif // HAVE_CANN
+
+#ifdef HAVE_DNN_NGRAPH
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        float alphaSize = alpha;
+        if (!normBySize)
+            alphaSize *= (type == SPATIAL_NRM ? size*size : size);
+
+        auto& ieInpNode = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        std::vector<int64_t> axes;
+        if (type != SPATIAL_NRM) {
+            axes = {1};
+        } else {
+            axes.resize(ieInpNode->get_shape().size() - 2);
+            std::iota(axes.begin(), axes.end(), 2);
+        }
+        auto ngraph_axes = std::make_shared<ngraph::op::Constant>(ngraph::element::i64, ngraph::Shape{axes.size()}, axes.data());
+        auto lrn = std::make_shared<ngraph::op::LRN>(ieInpNode, ngraph_axes, alphaSize, beta, bias, size);
+        return Ptr<BackendNode>(new InfEngineNgraphNode(lrn));
+    }
+#endif  // HAVE_DNN_NGRAPH
+
+    virtual int64 getFLOPS(const std::vector<MatShape> &inputs,
+                           const std::vector<MatShape> &outputs) const CV_OVERRIDE
+    {
+        CV_UNUSED(outputs); // suppress unused variable warning
         CV_Assert(inputs.size() > 0);
         long flops = 0;
 
@@ -334,6 +526,13 @@ public:
         }
         return flops;
     }
+
+private:
+    enum Type
+    {
+        CHANNEL_NRM,
+        SPATIAL_NRM
+    };
 };
 
 Ptr<LRNLayer> LRNLayer::create(const LayerParams& params)

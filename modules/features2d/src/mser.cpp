@@ -35,7 +35,7 @@
  *    it actually get 1.5~2m/s on my centrino L7200 1.2GHz laptop.
  * 3. the color image algorithm is taken from: Maximally Stable Colour Regions for Recognition and Match;
  *    it should be much slower than gray image method ( 3~4 times );
- *    the chi_table.h file is taken directly from paper's source code which is distributed under GPL.
+ *    the chi_table.h file is taken directly from paper's source code which is distributed under permissive BSD-like license: http://users.isy.liu.se/cvl/perfo/software/chi_table.h
  * 4. though the name is *contours*, the result actually is a list of point set.
  */
 
@@ -48,7 +48,7 @@ namespace cv
 
 using std::vector;
 
-class MSER_Impl : public MSER
+class MSER_Impl CV_FINAL : public MSER
 {
 public:
     struct Params
@@ -85,19 +85,79 @@ public:
 
     explicit MSER_Impl(const Params& _params) : params(_params) {}
 
-    virtual ~MSER_Impl() {}
+    virtual ~MSER_Impl() CV_OVERRIDE {}
 
-    void setDelta(int delta) { params.delta = delta; }
-    int getDelta() const { return params.delta; }
+    void read( const FileNode& fn) CV_OVERRIDE
+    {
+      // if node is empty, keep previous value
+      if (!fn["delta"].empty())
+        fn["delta"] >> params.delta;
+      if (!fn["minArea"].empty())
+        fn["minArea"] >> params.minArea;
+      if (!fn["maxArea"].empty())
+        fn["maxArea"] >> params.maxArea;
+      if (!fn["maxVariation"].empty())
+        fn["maxVariation"] >> params.maxVariation;
+      if (!fn["minDiversity"].empty())
+        fn["minDiversity"] >> params.minDiversity;
+      if (!fn["maxEvolution"].empty())
+        fn["maxEvolution"] >> params.maxEvolution;
+      if (!fn["areaThreshold"].empty())
+        fn["areaThreshold"] >> params.areaThreshold;
+      if (!fn["minMargin"].empty())
+        fn["minMargin"] >> params.minMargin;
+      if (!fn["edgeBlurSize"].empty())
+        fn["edgeBlurSize"] >> params.edgeBlurSize;
+      if (!fn["pass2Only"].empty())
+        fn["pass2Only"] >> params.pass2Only;
+    }
+    void write( FileStorage& fs) const CV_OVERRIDE
+    {
+      if(fs.isOpened())
+      {
+        fs << "name" << getDefaultName();
+        fs << "delta" << params.delta;
+        fs << "minArea" << params.minArea;
+        fs << "maxArea" << params.maxArea;
+        fs << "maxVariation" << params.maxVariation;
+        fs << "minDiversity" << params.minDiversity;
+        fs << "maxEvolution" << params.maxEvolution;
+        fs << "areaThreshold" << params.areaThreshold;
+        fs << "minMargin" << params.minMargin;
+        fs << "edgeBlurSize" << params.edgeBlurSize;
+        fs << "pass2Only" << params.pass2Only;
+      }
+    }
 
-    void setMinArea(int minArea) { params.minArea = minArea; }
-    int getMinArea() const { return params.minArea; }
+    void setDelta(int delta) CV_OVERRIDE { params.delta = delta; }
+    int getDelta() const CV_OVERRIDE { return params.delta; }
 
-    void setMaxArea(int maxArea) { params.maxArea = maxArea; }
-    int getMaxArea() const { return params.maxArea; }
+    void setMinArea(int minArea) CV_OVERRIDE { params.minArea = minArea; }
+    int getMinArea() const CV_OVERRIDE { return params.minArea; }
 
-    void setPass2Only(bool f) { params.pass2Only = f; }
-    bool getPass2Only() const { return params.pass2Only; }
+    void setMaxArea(int maxArea) CV_OVERRIDE { params.maxArea = maxArea; }
+    int getMaxArea() const CV_OVERRIDE { return params.maxArea; }
+
+    void setMaxVariation(double maxVariation) CV_OVERRIDE { params.maxVariation = maxVariation; }
+    double getMaxVariation() const CV_OVERRIDE { return params.maxVariation; }
+
+    void setMinDiversity(double minDiversity) CV_OVERRIDE { params.minDiversity = minDiversity; }
+    double getMinDiversity() const CV_OVERRIDE { return params.minDiversity; }
+
+    void setMaxEvolution(int maxEvolution) CV_OVERRIDE { params.maxEvolution = maxEvolution; }
+    int getMaxEvolution() const CV_OVERRIDE { return params.maxEvolution; }
+
+    void setAreaThreshold(double areaThreshold) CV_OVERRIDE { params.areaThreshold = areaThreshold; }
+    double getAreaThreshold() const CV_OVERRIDE { return params.areaThreshold; }
+
+    void setMinMargin(double min_margin) CV_OVERRIDE { params.minMargin = min_margin; }
+    double getMinMargin() const CV_OVERRIDE { return params.minMargin; }
+
+    void setEdgeBlurSize(int edge_blur_size) CV_OVERRIDE { params.edgeBlurSize = edge_blur_size; }
+    int getEdgeBlurSize() const CV_OVERRIDE { return params.edgeBlurSize; }
+
+    void setPass2Only(bool f) CV_OVERRIDE { params.pass2Only = f; }
+    bool getPass2Only() const CV_OVERRIDE { return params.pass2Only; }
 
     enum { DIR_SHIFT = 29, NEXT_MASK = ((1<<DIR_SHIFT)-1)  };
 
@@ -284,6 +344,7 @@ public:
                     history->parent_ = h;
                 }
             }
+            CV_Assert(h != NULL);
             h->val = gray_level;
             h->size = size;
             h->head = head;
@@ -363,8 +424,8 @@ public:
 
     void detectRegions( InputArray image,
                         std::vector<std::vector<Point> >& msers,
-                        std::vector<Rect>& bboxes );
-    void detect( InputArray _src, vector<KeyPoint>& keypoints, InputArray _mask );
+                        std::vector<Rect>& bboxes ) CV_OVERRIDE;
+    void detect( InputArray _src, vector<KeyPoint>& keypoints, InputArray _mask ) CV_OVERRIDE;
 
     void preprocess1( const Mat& img, int* level_size )
     {
@@ -982,7 +1043,7 @@ extractMSER_8uC3( const Mat& src,
                     double s = (double)(lr->size-lr->sizei)/(lr->dt-lr->di);
                     if ( s < lr->s )
                     {
-                        // skip the first one and check stablity
+                        // skip the first one and check stability
                         if ( i > lr->reinit+1 && MSCRStableCheck( lr, params ) )
                         {
                             if ( lr->tmsr == NULL )
@@ -1035,7 +1096,7 @@ extractMSER_8uC3( const Mat& src,
 
 void MSER_Impl::detectRegions( InputArray _src, vector<vector<Point> >& msers, vector<Rect>& bboxes )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     Mat src = _src.getMat();
 
@@ -1073,7 +1134,7 @@ void MSER_Impl::detectRegions( InputArray _src, vector<vector<Point> >& msers, v
 
 void MSER_Impl::detect( InputArray _image, vector<KeyPoint>& keypoints, InputArray _mask )
 {
-    CV_INSTRUMENT_REGION()
+    CV_INSTRUMENT_REGION();
 
     vector<Rect> bboxes;
     vector<vector<Point> > msers;
@@ -1106,6 +1167,11 @@ Ptr<MSER> MSER::create( int _delta, int _min_area, int _max_area,
                           _max_variation, _min_diversity,
                           _max_evolution, _area_threshold,
                           _min_margin, _edge_blur_size));
+}
+
+String MSER::getDefaultName() const
+{
+    return (Feature2D::getDefaultName() + ".MSER");
 }
 
 }

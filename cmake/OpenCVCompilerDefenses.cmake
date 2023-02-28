@@ -5,7 +5,7 @@
 # - https://wiki.debian.org/Hardening
 # - https://wiki.gentoo.org/wiki/Hardened/Toolchain
 # - https://docs.microsoft.com/en-us/cpp/build/reference/sdl-enable-additional-security-checks
-
+# - https://developer.apple.com/library/archive/documentation/Security/Conceptual/SecureCodingGuide/Articles/BufferOverflows.html
 
 set(OPENCV_LINKER_DEFENSES_FLAGS_COMMON "")
 
@@ -37,10 +37,20 @@ endmacro()
 
 if(MSVC)
   ocv_add_defense_compiler_flag("/GS")
-  ocv_add_defense_compiler_flag("/DynamicBase")
-  ocv_add_defense_compiler_flag("/SafeSEH")
   ocv_add_defense_compiler_flag("/sdl")
-elseif(CMAKE_COMPILER_IS_GNUCXX)
+  ocv_add_defense_compiler_flag("/guard:cf")
+  ocv_add_defense_compiler_flag("/w34018 /w34146 /w34244 /w34267 /w34302 /w34308 /w34509 /w34532 /w34533 /w34700 /w34789 /w34995 /w34996")
+  set(OPENCV_LINKER_DEFENSES_FLAGS_COMMON "${OPENCV_LINKER_DEFENSES_FLAGS_COMMON} /guard:cf /dynamicbase" )
+  if(NOT X86_64)
+    set(OPENCV_LINKER_DEFENSES_FLAGS_COMMON "${OPENCV_LINKER_DEFENSES_FLAGS_COMMON} /safeseh")
+  endif()
+elseif(CV_CLANG)
+  ocv_add_defense_compiler_flag("-fstack-protector-strong")
+  ocv_add_defense_compiler_flag_release("-D_FORTIFY_SOURCE=2")
+  if (NOT APPLE)
+    set(OPENCV_LINKER_DEFENSES_FLAGS_COMMON "${OPENCV_LINKER_DEFENSES_FLAGS_COMMON} -z noexecstack -z relro -z now" )
+  endif()
+elseif(CV_GCC)
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.9")
     ocv_add_defense_compiler_flag("-fstack-protector")
   else()
@@ -67,21 +77,13 @@ else()
 endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
-if(NOT CMAKE_CXX_FLAGS MATCHES "-fPIC")
-  ocv_add_defense_compiler_flag("-fPIC")
-endif()
-if(CMAKE_COMPILER_IS_GNUCXX)
+if(CV_GCC OR CV_CLANG)
+    if(NOT CMAKE_CXX_FLAGS MATCHES "-fPIC")
+      ocv_add_defense_compiler_flag("-fPIC")
+    endif()
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fPIE -pie")
 endif()
 
 set( CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${OPENCV_LINKER_DEFENSES_FLAGS_COMMON}" )
 set( CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} ${OPENCV_LINKER_DEFENSES_FLAGS_COMMON}" )
 set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCV_LINKER_DEFENSES_FLAGS_COMMON}" )
-
-if(CMAKE_COMPILER_IS_GNUCXX)
-  foreach(flags
-          CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_DEBUG
-          CMAKE_C_FLAGS CMAKE_C_FLAGS_RELEASE CMAKE_C_FLAGS_DEBUG)
-    string(REPLACE "-O3" "-O2" ${flags} "${${flags}}")
-  endforeach()
-endif()

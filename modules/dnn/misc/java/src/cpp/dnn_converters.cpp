@@ -6,6 +6,7 @@
 
 #include "dnn_converters.hpp"
 
+#define LOG_TAG "org.opencv.dnn"
 
 void Mat_to_MatShape(cv::Mat& mat, MatShape& matshape)
 {
@@ -17,18 +18,6 @@ void Mat_to_MatShape(cv::Mat& mat, MatShape& matshape)
 void MatShape_to_Mat(MatShape& matshape, cv::Mat& mat)
 {
     mat = cv::Mat(matshape, true);
-}
-
-void Mat_to_vector_size_t(cv::Mat& mat, std::vector<size_t>& v_size_t)
-{
-    v_size_t.clear();
-    CHECK_MAT(mat.type()==CV_32SC1 && mat.cols==1);
-    v_size_t = (std::vector<size_t>) mat;
-}
-
-void vector_size_t_to_Mat(std::vector<size_t>& v_size_t, cv::Mat& mat)
-{
-    mat = cv::Mat(v_size_t, true);
 }
 
 std::vector<MatShape> List_to_vector_MatShape(JNIEnv* env, jobject list)
@@ -65,6 +54,25 @@ jobject vector_Ptr_Layer_to_List(JNIEnv* env, std::vector<cv::Ptr<cv::dnn::Layer
     jobject result = env->NewObject(juArrayList, m_create, vs.size());
     for (std::vector< cv::Ptr<cv::dnn::Layer> >::iterator it = vs.begin(); it != vs.end(); ++it) {
         jobject element = env->NewObject(jLayerClass, m_create_layer, (*it).get());
+        env->CallBooleanMethod(result, m_add, element);
+        env->DeleteLocalRef(element);
+    }
+    return result;
+}
+
+jobject vector_Target_to_List(JNIEnv* env, std::vector<cv::dnn::Target>& vs)
+{
+    static jclass juArrayList   = ARRAYLIST(env);
+    static jmethodID m_create   = CONSTRUCTOR(env, juArrayList);
+    jmethodID m_add       = LIST_ADD(env, juArrayList);
+
+    static jclass jInteger = env->FindClass("java/lang/Integer");
+    static jmethodID m_create_Integer = env->GetMethodID(jInteger, "<init>", "(I)V");
+
+    jobject result = env->NewObject(juArrayList, m_create, vs.size());
+    for (size_t i = 0; i < vs.size(); ++i)
+    {
+        jobject element = env->NewObject(jInteger, m_create_Integer, vs[i]);
         env->CallBooleanMethod(result, m_add, element);
         env->DeleteLocalRef(element);
     }

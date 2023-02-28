@@ -47,12 +47,15 @@
 
 #include "opencv2/core/hal/interface.h"
 
-#if defined __GNUC__
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wunused-parameter"
-#elif defined _MSC_VER
-#  pragma warning( push )
-#  pragma warning( disable: 4100 )
+#if defined(__clang__)  // clang or MSVC clang
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4100)
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
 //! @addtogroup core_hal_interface
@@ -712,13 +715,31 @@ inline int hal_ni_gemm64fc(const double* src1, size_t src1_step, const double* s
 #define cv_hal_gemm64fc hal_ni_gemm64fc
 //! @endcond
 
+/**
+   @brief Finds the global minimum and maximum in an array.
+   @param src_data,src_step Source image
+   @param width,height Source image dimensions
+   @param depth Depth of source image
+   @param minVal,maxVal Pointer to the returned global minimum and maximum in an array.
+   @param minIdx,maxIdx Pointer to the returned minimum and maximum location.
+   @param mask Specified array region.
+*/
+inline int hal_ni_minMaxIdx(const uchar* src_data, size_t src_step, int width, int height, int depth, double* minVal, double* maxVal,
+                            int* minIdx, int* maxIdx, uchar* mask) { return CV_HAL_ERROR_NOT_IMPLEMENTED; }
+
+//! @cond IGNORED
+#define cv_hal_minMaxIdx hal_ni_minMaxIdx
+//! @endcond
+
 //! @}
 
 
-#if defined __GNUC__
-#  pragma GCC diagnostic pop
-#elif defined _MSC_VER
-#  pragma warning( pop )
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
 #endif
 
 #include "hal_internal.hpp"
@@ -727,7 +748,7 @@ inline int hal_ni_gemm64fc(const double* src1, size_t src1_step, const double* s
 //! @cond IGNORED
 #define CALL_HAL_RET(name, fun, retval, ...) \
 { \
-    int res = fun(__VA_ARGS__, &retval); \
+    int res = __CV_EXPAND(fun(__VA_ARGS__, &retval)); \
     if (res == CV_HAL_ERROR_OK) \
         return retval; \
     else if (res != CV_HAL_ERROR_NOT_IMPLEMENTED) \
@@ -738,7 +759,7 @@ inline int hal_ni_gemm64fc(const double* src1, size_t src1_step, const double* s
 
 #define CALL_HAL(name, fun, ...) \
 { \
-    int res = fun(__VA_ARGS__); \
+    int res = __CV_EXPAND(fun(__VA_ARGS__)); \
     if (res == CV_HAL_ERROR_OK) \
         return; \
     else if (res != CV_HAL_ERROR_NOT_IMPLEMENTED) \

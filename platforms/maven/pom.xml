@@ -3,12 +3,12 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.opencv</groupId>
     <artifactId>opencv-parent</artifactId>
-    <version>3.3.0</version>
+    <version>4.7.0</version>
     <packaging>pom</packaging>
     <name>OpenCV Parent POM</name>
     <licenses>
         <license>
-            <name>License Agreement For Open Source Computer Vision Library (3-clause BSD License)</name>
+            <name>License Agreement For Open Source Computer Vision Library (Apache 2.0 License)</name>
             <url>http://opencv.org/license.html</url>
         </license>
     </licenses>
@@ -31,6 +31,7 @@
         <pax.exam.version>4.8.0</pax.exam.version>
         <maven.compiler.source>1.7</maven.compiler.source>
         <maven.compiler.target>1.7</maven.compiler.target>
+        <download.cmake>false</download.cmake>
     </properties>
     <distributionManagement>
         <snapshotRepository>
@@ -41,6 +42,16 @@
 
     <modules>
         <module>opencv</module>
-        <module>opencv-it</module>
     </modules>
+    <profiles>
+        <profile>
+            <id>integration</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <modules>
+                <module>opencv-it</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

@@ -42,16 +42,26 @@
 
 #include "../precomp.hpp"
 #include "layers_common.hpp"
+#include "../op_cuda.hpp"
+#include "../op_inf_engine.hpp"
+#include "../ie_ngraph.hpp"
+#include "../op_cann.hpp"
+
 #include <float.h>
 #include <algorithm>
 #include <opencv2/dnn/shape_utils.hpp>
+
+#ifdef HAVE_CUDA
+#include "../cuda4dnn/primitives/reshape.hpp"
+using namespace cv::dnn::cuda4dnn;
+#endif
 
 namespace cv
 {
 namespace dnn
 {
 
-class FlattenLayerImpl : public FlattenLayer
+class FlattenLayerImpl CV_FINAL : public FlattenLayer
 {
 public:
     FlattenLayerImpl(const LayerParams &params)
@@ -61,10 +71,21 @@ public:
         setParamsFrom(params);
     }
 
+    virtual bool supportBackend(int backendId) CV_OVERRIDE
+    {
+#ifdef HAVE_INF_ENGINE
+        if (backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH)
+            return true;
+#endif
+        return backendId == DNN_BACKEND_OPENCV ||
+               backendId == DNN_BACKEND_CUDA ||
+               backendId == DNN_BACKEND_CANN;
+    }
+
     bool getMemoryShapes(const std::vector<MatShape> &inputs,
                          const int requiredOutputs,
                          std::vector<MatShape> &outputs,
-                         std::vector<MatShape> &internals) const
+                         std::vector<MatShape> &internals) const CV_OVERRIDE
     {
         CV_Assert(inputs.size() > 0);
         for (size_t i = 1; i < inputs.size(); i++)
@@ -73,14 +94,8 @@ public:
         }
 
         int numAxes = inputs[0].size();
-        int startAxis = clamp(_startAxis, numAxes);
-        int endAxis = clamp(_endAxis, numAxes);
-
-        for (size_t i = 1; i < inputs.size(); i++)
-        {
-            CV_Assert(inputs[i] == inputs[0]);
-        }
-
+        int startAxis = normalize_axis(_startAxis, numAxes);
+        int endAxis = normalize_axis(_endAxis, numAxes);
 
         CV_Assert(startAxis >= 0);
         CV_Assert(endAxis >= startAxis && endAxis < (int)numAxes);
@@ -97,23 +112,141 @@ public:
         {
             outputShapeVec.push_back(inputs[0][i]);
         }
-        CV_Assert(outputShapeVec.size() <= 4);
 
         outputs.resize(inputs.size(), outputShapeVec);
 
         return true;
     }
 
-    void forward(std::vector<Mat*> &inputs, std::vector<Mat> &outputs, std::vector<Mat> &internals)
+    void finalize(InputArrayOfArrays inputs_arr, OutputArrayOfArrays) CV_OVERRIDE
     {
-        CV_TRACE_FUNCTION();
-        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+        std::vector<Mat> inputs;
+        inputs_arr.getMatVector(inputs);
+
+        int numAxes = inputs[0].dims;
+        _startAxis = normalize_axis(_startAxis, numAxes);
+        _endAxis = normalize_axis(_endAxis, numAxes);
+    }
+
+#ifdef HAVE_OPENCL
+    bool forward_ocl(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr)
+    {
+        std::vector<UMat> inpvec;
+        std::vector<UMat> outputs;
+
+        inputs_arr.getUMatVector(inpvec);
+        outputs_arr.getUMatVector(outputs);
+
+        std::vector<UMat*> inputs(inpvec.size());
+        for (int i = 0; i < inpvec.size(); i++)
+            inputs[i] = &inpvec[i];
 
         for (size_t i = 0; i < inputs.size(); i++)
         {
             MatShape outShape = shape(outputs[i]);
-            outputs[i] = inputs[i]->reshape(1, (int)outShape.size(), &outShape[0]);
+            UMat& output = outputs_arr.getUMatRef(i);
+            output = inputs[i]->reshape(1, (int)outShape.size(), &outShape[0]);
         }
+
+        return true;
+    }
+#endif
+
+    void forward(InputArrayOfArrays inputs_arr, OutputArrayOfArrays outputs_arr, OutputArrayOfArrays internals_arr) CV_OVERRIDE
+    {
+        CV_TRACE_FUNCTION();
+        CV_TRACE_ARG_VALUE(name, "name", name.c_str());
+
+        CV_OCL_RUN(IS_DNN_OPENCL_TARGET(preferableTarget) &&
+                   outputs_arr.isUMatVector(),
+                   forward_ocl(inputs_arr, outputs_arr, internals_arr))
+
+        std::vector<Mat> inputs, outputs;
+        inputs_arr.getMatVector(inputs);
+        outputs_arr.getMatVector(outputs);
+
+        for (size_t i = 0; i < inputs.size(); i++)
+        {
+            MatShape outShape = shape(outputs[i]);
+            if (inputs[i].data != outputs[i].data)
+            {
+                inputs[i].reshape(1, (int)outShape.size(), &outShape[0]).copyTo(outputs[i]);
+            }
+        }
+    }
+
+#ifdef HAVE_CANN
+    virtual Ptr<BackendNode> initCann(const std::vector<Ptr<BackendWrapper> > &inputsWrapper, const int index, const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        auto x = inputsWrapper[0].dynamicCast<CannBackendWrapper>();
+        auto x_desc = x->getTensorDesc();
+        auto op_x = nodes[0].dynamicCast<CannBackendNode>()->getOp();
+        auto output_desc = std::make_shared<ge::TensorDesc>(ge::Shape(), ge::FORMAT_NCHW, ge::DT_FLOAT);
+
+        std::string op_name = cv::format("flatten_%d", index);
+        auto op = std::make_shared<ge::op::FlattenV2>(op_name);
+
+        // set attributes
+        int num_axes = x->host->dims;
+        int start_axis = normalize_axis(_startAxis, num_axes);
+        int end_axis = normalize_axis(_endAxis, num_axes);
+        op->set_attr_axis(start_axis);
+        op->set_attr_end_axis(end_axis);
+
+        // set inputs
+        op->set_input_x_by_name(*op_x, "y");
+        op->update_input_desc_x(*x_desc);
+        // set outputs
+        op->update_output_desc_y(*output_desc);
+
+        return Ptr<BackendNode>(new CannBackendNode(op));
+    }
+#endif
+
+#ifdef HAVE_DNN_NGRAPH
+    virtual Ptr<BackendNode> initNgraph(const std::vector<Ptr<BackendWrapper> >& inputs,
+                                        const std::vector<Ptr<BackendNode> >& nodes) CV_OVERRIDE
+    {
+        auto& ieInpNode = nodes[0].dynamicCast<InfEngineNgraphNode>()->node;
+        std::vector<size_t> dims = ieInpNode->get_shape();
+
+        int numAxes = dims.size();
+        int startAxis = normalize_axis(_startAxis, numAxes);
+        int endAxis = normalize_axis(_endAxis, numAxes);
+
+        CV_Assert(startAxis >= 0);
+        CV_Assert(endAxis >= startAxis && endAxis < numAxes);
+        int64_t flattenedDimensionSize = std::accumulate(dims.begin() + startAxis,
+                                         dims.begin() + endAxis + 1, 1, std::multiplies<size_t>());
+
+        std::vector<int64_t> outputShapeVec(dims.begin(), dims.begin() + startAxis);
+        outputShapeVec.push_back(flattenedDimensionSize);
+        outputShapeVec.insert(outputShapeVec.end(), dims.begin() + endAxis + 1, dims.end());
+
+        auto shape   = std::make_shared<ngraph::op::Constant>(ngraph::element::i64,
+                       ngraph::Shape({outputShapeVec.size()}), outputShapeVec.data());
+        auto reshape = std::make_shared<ngraph::op::v1::Reshape>(ieInpNode, shape, true);
+        return Ptr<BackendNode>(new InfEngineNgraphNode(reshape));
+    }
+#endif  // HAVE_DNN_NGRAPH
+
+
+#ifdef HAVE_CUDA
+    Ptr<BackendNode> initCUDA(
+        void *context_,
+        const std::vector<Ptr<BackendWrapper>>& inputs,
+        const std::vector<Ptr<BackendWrapper>>& outputs
+    ) override
+    {
+        auto context = reinterpret_cast<csl::CSLContext*>(context_);
+        return make_cuda_node<cuda4dnn::ReshapeOp>(preferableTarget, std::move(context->stream));
+    }
+#endif
+
+    virtual bool tryQuantize(const std::vector<std::vector<float> > &scales,
+                             const std::vector<std::vector<int> > &zeropoints, LayerParams& params) CV_OVERRIDE
+    {
+        return true;
     }
 
     int _startAxis;

@@ -6,17 +6,38 @@
 #define MFXHELPER_H
 
 #include "opencv2/core.hpp"
+#include "opencv2/core/utils/configuration.private.hpp"
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 
-#include <mfxcommon.h>
-#include <mfxstructures.h>
-#include <mfxvideo++.h>
-#include <mfxvp8.h>
-#include <mfxjpeg.h>
-#include <mfxplugin++.h>
+CV_SUPPRESS_DEPRECATED_START
+#  if defined(_MSC_VER)
+#    pragma warning(push)
+#    pragma warning(disable:4201)  // nonstandard extension used: nameless struct/union
+#  endif
+#ifdef HAVE_ONEVPL
+#  include <vpl/mfxcommon.h>
+#  include <vpl/mfxstructures.h>
+#  include <vpl/mfxvideo++.h>
+#  include <vpl/mfxvp8.h>
+#  include <vpl/mfxjpeg.h>
+#  include <vpl/mfxdispatcher.h>
+#else
+#  include <mfxcommon.h>
+#  include <mfxstructures.h>
+#  include <mfxvideo++.h>
+#  include <mfxvp8.h>
+#  include <mfxjpeg.h>
+#  ifdef HAVE_MFX_PLUGIN
+#    include <mfxplugin++.h>
+#  endif
+#endif
+#  if defined(_MSC_VER)
+#    pragma warning(pop)
+#  endif
+CV_SUPPRESS_DEPRECATED_END
 
 //                 //
 //  Debug helpers  //
@@ -92,8 +113,6 @@ inline std::string mfxStatusToString(mfxStatus s) {
     case MFX_ERR_UNDEFINED_BEHAVIOR: return "MFX_ERR_UNDEFINED_BEHAVIOR";
     case MFX_ERR_DEVICE_FAILED: return "MFX_ERR_DEVICE_FAILED";
     case MFX_ERR_MORE_BITSTREAM: return "MFX_ERR_MORE_BITSTREAM";
-    case MFX_ERR_INCOMPATIBLE_AUDIO_PARAM: return "MFX_ERR_INCOMPATIBLE_AUDIO_PARAM";
-    case MFX_ERR_INVALID_AUDIO_PARAM: return "MFX_ERR_INVALID_AUDIO_PARAM";
     case MFX_ERR_GPU_HANG: return "MFX_ERR_GPU_HANG";
     case MFX_ERR_REALLOC_SURFACE: return "MFX_ERR_REALLOC_SURFACE";
     case MFX_WRN_IN_EXECUTION: return "MFX_WRN_IN_EXECUTION";
@@ -104,8 +123,7 @@ inline std::string mfxStatusToString(mfxStatus s) {
     case MFX_WRN_VALUE_NOT_CHANGED: return "MFX_WRN_VALUE_NOT_CHANGED";
     case MFX_WRN_OUT_OF_RANGE: return "MFX_WRN_OUT_OF_RANGE";
     case MFX_WRN_FILTER_SKIPPED: return "MFX_WRN_FILTER_SKIPPED";
-    case MFX_WRN_INCOMPATIBLE_AUDIO_PARAM: return "MFX_WRN_INCOMPATIBLE_AUDIO_PARAM";
-    default: return "<Invalid mfxStatus>";
+    default: return "<Invalid or unknown mfxStatus>";
     }
 }
 
@@ -156,16 +174,6 @@ inline std::ostream & operator<<(std::ostream &out, const mfxFrameData &data) {
 
 //==================================================================================================
 
-static const int CC_MPG2 = FourCC('M', 'P', 'G', '2').vali32;
-static const int CC_H264 = FourCC('H', '2', '6', '4').vali32;
-static const int CC_X264 = FourCC('X', '2', '6', '4').vali32;
-static const int CC_AVC  = FourCC('A', 'V', 'C', ' ').vali32;
-static const int CC_H265 = FourCC('H', '2', '6', '5').vali32;
-static const int CC_HEVC = FourCC('H', 'E', 'V', 'C').vali32;
-static const int CC_VC1  = FourCC('V', 'C', '1', ' ').vali32;
-
-//==================================================================================================
-
 template <typename T>
 inline void cleanup(T * &ptr)
 {
@@ -178,45 +186,76 @@ inline void cleanup(T * &ptr)
 
 //==================================================================================================
 
-struct Plugin
+#ifdef HAVE_ONEVPL
+mfxLoader getVPLLoaderInstance();
+#endif
+
+//==================================================================================================
+
+class MFXVideoSession_WRAP : public MFXVideoSession
+{
+#ifdef HAVE_ONEVPL
+public:
+    mfxStatus CreateSession()
+    {
+        return MFXCreateSession(getVPLLoaderInstance(), 0, &m_session);
+    }
+#endif
+};
+
+//==================================================================================================
+
+class Plugin
 {
 public:
-    static Plugin * loadEncoderPlugin(MFXVideoSession &session, mfxU32 codecId)
+    static Plugin * loadEncoderPlugin(MFXVideoSession_WRAP &session, mfxU32 codecId)
     {
+#ifdef HAVE_MFX_PLUGIN
         static const mfxPluginUID hevc_enc_uid = { 0x6f, 0xad, 0xc7, 0x91, 0xa0, 0xc2, 0xeb, 0x47, 0x9a, 0xb6, 0xdc, 0xd5, 0xea, 0x9d, 0xa3, 0x47 };
         if (codecId == MFX_CODEC_HEVC)
             return new Plugin(session, hevc_enc_uid);
+#else
+        CV_UNUSED(session); CV_UNUSED(codecId);
+#endif
         return 0;
     }
-    static Plugin * loadDecoderPlugin(MFXVideoSession &session, mfxU32 codecId)
+    static Plugin * loadDecoderPlugin(MFXVideoSession_WRAP &session, mfxU32 codecId)
     {
+#ifdef HAVE_MFX_PLUGIN
         static const mfxPluginUID hevc_dec_uid = { 0x33, 0xa6, 0x1c, 0x0b, 0x4c, 0x27, 0x45, 0x4c, 0xa8, 0xd8, 0x5d, 0xde, 0x75, 0x7c, 0x6f, 0x8e };
         if (codecId == MFX_CODEC_HEVC)
             return new Plugin(session, hevc_dec_uid);
+#else
+        CV_UNUSED(session); CV_UNUSED(codecId);
+#endif
         return 0;
     }
     ~Plugin()
     {
+#ifdef HAVE_MFX_PLUGIN
         if (isGood())
             MFXVideoUSER_UnLoad(session, &uid);
+#endif
     }
     bool isGood() const { return res >= MFX_ERR_NONE; }
 private:
-    MFXVideoSession &session;
-    mfxPluginUID uid;
     mfxStatus res;
 private:
-    Plugin(MFXVideoSession &_session, mfxPluginUID _uid) : session(_session), uid(_uid)
+#ifdef HAVE_MFX_PLUGIN
+    MFXVideoSession_WRAP &session;
+    mfxPluginUID uid;
+    Plugin(MFXVideoSession_WRAP &_session, mfxPluginUID _uid) : session(_session), uid(_uid)
     {
         res = MFXVideoUSER_Load(session, &uid, 1);
     }
+#endif
     Plugin(const Plugin &);
     Plugin &operator=(const Plugin &);
 };
 
 //==================================================================================================
 
-struct ReadBitstream
+class ReadBitstream
 {
 public:
     ReadBitstream(const char * filename, size_t maxSize = 10 * 1024 * 1024);
@@ -235,7 +274,7 @@ public:
 
 //==================================================================================================
 
-struct WriteBitstream
+class WriteBitstream
 {
 public:
     WriteBitstream(const char * filename, size_t maxSize);
@@ -269,16 +308,15 @@ public:
         DBG(std::cout << "MFX QueryIOSurf: " << res << std::endl);
         if (res < MFX_ERR_NONE)
             return 0;
-        return new SurfacePool(request.Info.Width,
-                               request.Info.Height,
-                               request.NumFrameSuggested,
-                               params.mfx.FrameInfo);
+        return _create(request, params);
     }
+private:
+    static SurfacePool* _create(const mfxFrameAllocRequest& request, const mfxVideoParam& params);
 private:
     SurfacePool(const SurfacePool &);
     SurfacePool &operator=(const SurfacePool &);
 public:
-    ushort width, height;
+    size_t width, height;
     size_t oneSize;
     cv::AutoBuffer<uchar, 0> buffers;
     std::vector<mfxFrameSurface1> surfaces;
@@ -289,14 +327,39 @@ public:
 class DeviceHandler {
 public:
     virtual ~DeviceHandler() {}
-    bool init(MFXVideoSession &session);
+    bool init(MFXVideoSession_WRAP &session);
 protected:
-    virtual bool initDeviceSession(MFXVideoSession &session) = 0;
+    virtual bool initDeviceSession(MFXVideoSession_WRAP &session) = 0;
 };
 
 
-// Linux specific
+// TODO: move to core::util?
+#ifdef CV_CXX11
+#include <thread>
+static void sleep_ms(int64 ms)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+#elif defined(__linux__)
+#include <time.h>
+static void sleep_ms(int64 ms)
+{
+    nanosleep(ms * 1000 * 1000);
+}
+#elif defined _WIN32
+static void sleep_ms(int64 ms)
+{
+    Sleep(ms);
+}
+#else
+#error "Can not detect sleep_ms() implementation"
+#endif
 
+
+// Linux specific
+#ifdef __linux__
+
+#include <unistd.h>
 #include <va/va_drm.h>
 
 class VAHandle : public DeviceHandler {
@@ -306,13 +369,31 @@ public:
 private:
     VAHandle(const VAHandle &);
     VAHandle &operator=(const VAHandle &);
-    virtual bool initDeviceSession(MFXVideoSession &session);
+    bool initDeviceSession(MFXVideoSession_WRAP &session) CV_OVERRIDE;
 private:
     VADisplay display;
     int file;
 };
 
-// TODO: Windows specific
+#endif // __linux__
 
+// Windows specific
+#ifdef _WIN32
+
+#include <Windows.h>
+
+class DXHandle : public DeviceHandler {
+public:
+    DXHandle() {}
+    ~DXHandle() {}
+private:
+    DXHandle(const DXHandle &);
+    DXHandle &operator=(const DXHandle &);
+    bool initDeviceSession(MFXVideoSession_WRAP &) CV_OVERRIDE { return true; }
+};
+
+#endif // _WIN32
+
+DeviceHandler * createDeviceHandler();
 
 #endif // MFXHELPER_H

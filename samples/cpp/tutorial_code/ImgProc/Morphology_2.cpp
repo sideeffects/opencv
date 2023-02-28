@@ -7,6 +7,7 @@
 #include "opencv2/imgproc.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/highgui.hpp"
+#include <iostream>
 
 using namespace cv;
 
@@ -32,15 +33,14 @@ void Morphology_Operations( int, void* );
 int main( int argc, char** argv )
 {
   //![load]
-  String imageName("../data/baboon.jpg"); // by default
-  if (argc > 1)
+  CommandLineParser parser( argc, argv, "{@input | baboon.jpg | input image}" );
+  src = imread( samples::findFile( parser.get<String>( "@input" ) ), IMREAD_COLOR );
+  if (src.empty())
   {
-  imageName = argv[1];
+    std::cout << "Could not open or find the image!\n" << std::endl;
+    std::cout << "Usage: " << argv[0] << " <Input image>" << std::endl;
+    return EXIT_FAILURE;
   }
-  src = imread(imageName, IMREAD_COLOR); // Load an image
-
-  if( src.empty() )
-    { return -1; }
   //![load]
 
   //![window]

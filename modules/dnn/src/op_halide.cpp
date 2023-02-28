@@ -6,23 +6,163 @@
 // Third party copyrights are property of their respective owners.
 
 #include "precomp.hpp"
+#include <opencv2/dnn/shape_utils.hpp>
 #include "op_halide.hpp"
+#include "net_impl.hpp"
 
 #ifdef HAVE_HALIDE
+#include "halide_scheduler.hpp"
+
 #include <HalideRuntimeOpenCL.h>
 #endif  // HAVE_HALIDE
 
-namespace cv
+namespace cv {
+namespace dnn {
+CV__DNN_INLINE_NS_BEGIN
+
+
+void Net::Impl::setHalideScheduler(const String& scheduler)
 {
-namespace dnn
-{
+    halideConfigFile = scheduler;
+}
+
 
 #ifdef HAVE_HALIDE
+
+
+void Net::Impl::compileHalide()
+{
+    CV_TRACE_FUNCTION();
+
+    CV_Assert(preferableBackend == DNN_BACKEND_HALIDE);
+
+    HalideScheduler scheduler(halideConfigFile);
+    std::vector< std::reference_wrapper<LayerData> > compileList; compileList.reserve(64);
+    for (MapIdToLayerData::iterator it = layers.begin(); it != layers.end(); ++it)
+    {
+        LayerData& ld = it->second;
+        Ptr<Layer> layer = ld.layerInstance;
+        if (layer->supportBackend(DNN_BACKEND_HALIDE) && !ld.skip)
+        {
+            CV_Assert(!ld.backendNodes[DNN_BACKEND_HALIDE].empty());
+            bool scheduled = scheduler.process(ld.backendNodes[DNN_BACKEND_HALIDE]);
+            if (!scheduled)
+            {
+                // Use automatic scheduling provided by layer.
+                layer->applyHalideScheduler(ld.backendNodes[DNN_BACKEND_HALIDE],
+                                            ld.inputBlobs, ld.outputBlobs,
+                                            preferableTarget);
+            }
+            compileList.emplace_back(ld);
+        }
+    }
+    std::atomic<int> progress(0);
+    auto fn = ([&] () -> void
+    {
+        for (;;)
+        {
+            int id = progress.fetch_add(1);
+            if ((size_t)id >= compileList.size())
+                return;
+            const LayerData& ld = compileList[id].get();
+            Ptr<BackendNode> node = ld.backendNodes.find(DNN_BACKEND_HALIDE)->second;
+            dnn::compileHalide(ld.outputBlobs, node, preferableTarget);
+        }
+    });
+    size_t num_threads = std::min(compileList.size(), (size_t)std::thread::hardware_concurrency());
+    num_threads = std::max((size_t)1u, std::min((size_t)8u, num_threads));
+    std::vector<std::thread> threads(num_threads - 1);
+    for (auto& t: threads) t = std::thread(fn);
+    fn(); // process own tasks
+    for (auto& t: threads) t.join();
+}
+
+
+void Net::Impl::initHalideBackend()
+{
+    CV_TRACE_FUNCTION();
+    CV_Assert_N(preferableBackend == DNN_BACKEND_HALIDE, haveHalide());
+
+    // Iterator to current layer.
+    MapIdToLayerData::iterator it = layers.begin();
+    // Iterator to base layer for fusion. In example, in case of conv+bn+relu
+    // it'll be a conv layer.
+    MapIdToLayerData::iterator baseIt = layers.begin();
+    for (; it != layers.end(); it++)
+    {
+        LayerData &ldTop = it->second;
+        Ptr<Layer> layerTop = ldTop.layerInstance;
+        if (!layerTop->supportBackend(preferableBackend))
+        {
+            // Move base iterator to layer that don't support preferable
+            // backend to prevent fusion over layer of different backend.
+            baseIt = it;
+            continue;
+        }
+        // Try to do layers fusion.
+        LayerData &ldBot = baseIt->second;
+        Ptr<Layer> layerBot = ldBot.layerInstance;
+        // 1. Check that bottom and top from the same backends.
+        if (it != layers.begin() && layerBot->supportBackend(preferableBackend))
+        {
+            // 2. Check that current layer works in-place.
+            bool inPlace = ldTop.inputBlobs.size() == 1 &&
+                           ldBot.outputBlobs.size() == 1 &&
+                           ldTop.inputBlobs[0]->data ==
+                           ldBot.outputBlobs[0].data;
+            if (inPlace)
+            {
+                // 3. Try to attach node.
+                CV_Assert(!ldBot.backendNodes[preferableBackend].empty());
+                Ptr<BackendNode> fusedNode =
+                    layerTop->tryAttach(ldBot.backendNodes[preferableBackend]);
+                if (!fusedNode.empty())
+                {
+                    ldTop.skip = true;
+                    ldBot.backendNodes[preferableBackend] = fusedNode;
+                    ldBot.outputBlobsWrappers = ldTop.outputBlobsWrappers;
+                    continue;
+                }
+            }
+        }
+        // No layers fusion.
+        ldTop.skip = false;
+        ldTop.backendNodes[DNN_BACKEND_HALIDE] =
+            layerTop->initHalide(ldTop.inputBlobsWrappers);
+        baseIt = it;
+    }
+}
+
+
+#endif  // HAVE_HALIDE
+CV__DNN_INLINE_NS_END
+
+
+#ifdef HAVE_HALIDE
+static MatShape getBufferShape(const MatShape& shape)
+{
+    if (shape.size() == 2 || shape.size() == 4)
+    {
+        int w, h, c, n;
+        getCanonicalSize(shape, &w, &h, &c, &n);
+        return {w, h, c, n};
+    }
+    else
+    {
+        MatShape bufferShape(shape);
+        std::reverse(bufferShape.begin(), bufferShape.end());
+        return bufferShape;
+    }
+}
+
+static MatShape getBufferShape(const MatSize& size)
+{
+    return getBufferShape(shape(size));
+}
+
 Halide::Buffer<float> wrapToHalideBuffer(const Mat& mat)
 {
-    int n, c, w, h;
-    getCanonicalSize(mat.size, &w, &h, &c, &n);
-    return wrapToHalideBuffer(mat, {w, h, c, n});
+    return wrapToHalideBuffer(mat, getBufferShape(mat.size));
 }
 
 Halide::Buffer<float> wrapToHalideBuffer(const Mat& mat,
@@ -76,6 +216,7 @@ HalideBackendNode::HalideBackendNode(const Ptr<HalideBackendNode>& base,
 HalideBackendWrapper::HalideBackendWrapper(int targetId, const cv::Mat& m)
     : BackendWrapper(DNN_BACKEND_HALIDE, targetId)
 {
+    managesDevMemory = true;
     buffer = wrapToHalideBuffer(m);
     if (targetId == DNN_TARGET_CPU)
     {
@@ -85,7 +226,7 @@ HalideBackendWrapper::HalideBackendWrapper(int targetId, const cv::Mat& m)
     {
         Halide::Target t = Halide::get_host_target();
         t.set_feature(Halide::Target::OpenCL);
-        buffer.copy_to_device(get_default_device_interface_for_target(t));
+        buffer.copy_to_device(t);
     }
     else
         CV_Error(Error::StsNotImplemented, "Unknown target identifier");
@@ -95,11 +236,10 @@ HalideBackendWrapper::HalideBackendWrapper(const Ptr<BackendWrapper>& base,
                                            const MatShape& shape)
     : BackendWrapper(DNN_BACKEND_HALIDE, base->targetId)
 {
-    int w, h, c, n;
-    getCanonicalSize(shape, &w, &h, &c, &n);
+    managesDevMemory = false;
     Halide::Buffer<float> baseBuffer = halideBuffer(base);
     buffer = Halide::Buffer<float>((float*)baseBuffer.raw_buffer()->host,
-                                   {w, h, c, n});
+                                   getBufferShape(shape));
     if (baseBuffer.has_device_allocation())
     {
         buffer.raw_buffer()->device = baseBuffer.raw_buffer()->device;
@@ -113,34 +253,35 @@ HalideBackendWrapper::HalideBackendWrapper(const Ptr<BackendWrapper>& base,
     }
 }
 
+HalideBackendWrapper::~HalideBackendWrapper()
+{
+    if (buffer.has_device_allocation() && !managesDevMemory)
+    {
+        buffer.raw_buffer()->device = 0;
+        buffer.raw_buffer()->device_interface = 0;
+        buffer.set_device_dirty(false);
+    }
+}
+
 void HalideBackendWrapper::copyToHost()
 {
-    CV_Assert(targetId == DNN_TARGET_CPU || buffer.device_dirty());
     if (buffer.device_dirty())
     {
         buffer.device_sync();
         buffer.copy_to_host();
     }
 }
+
+void HalideBackendWrapper::setHostDirty()
+{
+    buffer.set_device_dirty(false);
+    buffer.set_host_dirty();
+}
 #endif  // HAVE_HALIDE
 
-void getCanonicalSize(const MatSize& size, int* width, int* height,
-                      int* channels, int* batch)
+void getCanonicalSize(const MatSize& size, int* w, int* h, int* c, int* n)
 {
-    const int dims = size.p[-1];
-    CV_Assert(dims == 2 || dims == 4);
-    *batch = size[0];
-    *channels = size[1];
-    if (dims == 4)
-    {
-        *width = size[3];
-        *height = size[2];
-    }
-    else
-    {
-        *width = 1;
-        *height = 1;
-    }
+    getCanonicalSize(shape(size), w, h, c, n);
 }
 
 void getCanonicalSize(const MatShape& shape, int* width, int* height,
@@ -162,7 +303,7 @@ void getCanonicalSize(const MatShape& shape, int* width, int* height,
     }
 }
 
-void compileHalide(std::vector<Mat> &outputs, Ptr<BackendNode>& node, int targetId)
+void compileHalide(const std::vector<Mat> &outputs, Ptr<BackendNode>& node, int targetId)
 {
 #ifdef HAVE_HALIDE
     CV_Assert(!node.empty());
@@ -205,5 +346,83 @@ bool haveHalide()
 #endif  // HAVE_HALIDE
 }
 
-}  // namespace dnn
-}  // namespace cv
+
+CV__DNN_INLINE_NS_BEGIN
+
+
+void Layer::applyHalideScheduler(Ptr<BackendNode>& node, const std::vector<Mat*> &inputs,
+                                 const std::vector<Mat> &outputs, int targetId) const
+{
+#ifndef HAVE_HALIDE
+    CV_Error(Error::StsNotImplemented, "");
+#else
+    CV_TRACE_FUNCTION();
+
+    Halide::Var x("x"), y("y"), c("c"), n("n"), co("co"), ci("ci"),
+                xo("xo"), xi("xi"), yo("yo"), yi("yi"), tile("tile");
+    Halide::Func& top = node.dynamicCast<HalideBackendNode>()->funcs.back();
+
+    int outW, outH, outC, outN;
+    getCanonicalSize(outputs[0].size, &outW, &outH, &outC, &outN);
+
+    if (targetId == DNN_TARGET_CPU)
+    {
+        if (outW == 1 && outH == 1)
+        {
+            if (outC + outN == 1)
+                return;
+
+            if (outC > 8)
+              top.split(c, co, ci, 8)
+                 .fuse(x, y, tile).fuse(co, tile, tile).fuse(n, tile, tile)
+                 .parallel(tile)
+                 .vectorize(ci, 8);
+            else
+              top.fuse(x, y, tile).fuse(c, tile, tile).fuse(n, tile, tile)
+                 .parallel(tile);
+        }
+        else
+        {
+            if (outH > 2)
+            {
+                top.reorder(x, c, y)
+                   .split(y, yo, yi, 2)
+                   .fuse(yo, n, tile)
+                   .parallel(tile)
+                   .unroll(yi)
+                   .vectorize(x, outW >= 16 ? 16 : outW);
+            }
+        }
+    }
+    else if (targetId == DNN_TARGET_OPENCL)
+    {
+        if (outW == 1 && outH == 1)
+        {
+            int c_split = outC > 8 ? (outC > 16 ? 8 : 4) : outC;
+            top.split(c, co, ci, c_split)
+               .fuse(x, y, tile).fuse(co, tile, tile).fuse(n, tile, tile)
+               .gpu_blocks(tile)
+               .gpu_threads(ci);
+        }
+        else
+        {
+            int x_split = outW > 8 ? (outW >= 32 ? 16 : 8) : outW;
+            int y_split = outH > 8 ? (outH >= 32 ? 16 : 8) : outH;
+            // Supported vectorization widths: 2, 3, 4, 8, 16
+            int c_split = outC > 8 ? (outC > 16 ? 8 : 4) : std::min(4, outC);
+            top.split(x, xo, xi, x_split).split(y, yo, yi, y_split)
+               .split(c, co, ci, c_split)
+               .gpu_blocks(xo, yo, co)
+               .gpu_threads(xi, yi)
+               .reorder(xi, yi, ci, xo, yo, co)
+               .vectorize(ci);
+        }
+    }
+    else
+        CV_Error(Error::StsNotImplemented, "Unknown target identifier");
+#endif  // HAVE_HALIDE
+}
+
+
+CV__DNN_INLINE_NS_END
+}}  // namespace

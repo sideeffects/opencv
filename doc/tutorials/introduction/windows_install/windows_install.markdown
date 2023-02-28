@@ -1,9 +1,20 @@
 Installation in Windows {#tutorial_windows_install}
 =======================
 
+@prev_tutorial{tutorial_linux_eclipse}
+@next_tutorial{tutorial_windows_visual_studio_opencv}
+
+|    |    |
+| -: | :- |
+| Original author | Bernát Gábor |
+| Compatibility | OpenCV >= 3.0 |
+
+@warning
+This tutorial can contain obsolete information.
+
 The description here was tested on Windows 7 SP1. Nevertheless, it should also work on any other
 relatively modern version of Windows OS. If you encounter errors after following the steps described
-below, feel free to contact us via our [OpenCV Q&A forum](http://answers.opencv.org). We'll do our
+below, feel free to contact us via our [OpenCV Q&A forum](https://forum.opencv.org). We'll do our
 best to help you out.
 
 @note To use the OpenCV library you have two options: @ref tutorial_windows_install_prebuilt or
@@ -15,7 +26,7 @@ Installation by Using the Pre-built Libraries {#tutorial_windows_install_prebuil
 =============================================
 
 -#  Launch a web browser of choice and go to our [page on
-    Sourceforge](http://sourceforge.net/projects/opencvlibrary/files/opencv-win/).
+    Sourceforge](http://sourceforge.net/projects/opencvlibrary/files/).
 -#  Choose a build you want to use and download it.
 -#  Make sure you have admin rights. Unpack the self-extracting archive.
 -#  You can check the installation at the chosen path as you can see below.
@@ -24,18 +35,87 @@ Installation by Using the Pre-built Libraries {#tutorial_windows_install_prebuil
 
 -#  To finalize the installation go to the @ref tutorial_windows_install_path section.
 
+Installation by Using git-bash (version>=2.14.1) and cmake (version >=3.9.1){#tutorial_windows_gitbash_build}
+===============================================================
+
+-#  You must download [cmake (version >=3.9.1)](https://cmake.org) and install it. You must add cmake to PATH variable during installation
+
+-#  You must install [git-bash (version>=2.14.1)](https://git-for-windows.github.io/). Don't add git to PATH variable during installation
+
+-#  Run git-bash. You observe a command line window.
+Suppose you want to build opencv and opencv_contrib in c:/lib
+
+-#  In git command line enter following command (if folder does not exist) :
+@code{.bash}
+mkdir /c/lib
+cd /c/lib
+@endcode
+
+-#  save this script with name installOCV.sh in c:/lib
+@code{.bash}
+#!/bin/bash -e
+myRepo=$(pwd)
+CMAKE_GENERATOR_OPTIONS=-G"Visual Studio 16 2019"
+#CMAKE_GENERATOR_OPTIONS=-G"Visual Studio 15 2017 Win64"
+#CMAKE_GENERATOR_OPTIONS=(-G"Visual Studio 16 2019" -A x64)  # CMake 3.14+ is required
+if [  ! -d "$myRepo/opencv"  ]; then
+    echo "cloning opencv"
+    git clone https://github.com/opencv/opencv.git
+else
+    cd opencv
+    git pull --rebase
+    cd ..
+fi
+if [  ! -d "$myRepo/opencv_contrib"  ]; then
+    echo "cloning opencv_contrib"
+    git clone https://github.com/opencv/opencv_contrib.git
+else
+    cd opencv_contrib
+    git pull --rebase
+    cd ..
+fi
+RepoSource=opencv
+mkdir -p build_opencv
+pushd build_opencv
+CMAKE_OPTIONS=(-DBUILD_PERF_TESTS:BOOL=OFF -DBUILD_TESTS:BOOL=OFF -DBUILD_DOCS:BOOL=OFF  -DWITH_CUDA:BOOL=OFF -DBUILD_EXAMPLES:BOOL=OFF -DINSTALL_CREATE_DISTRIB=ON)
+set -x
+cmake "${CMAKE_GENERATOR_OPTIONS[@]}" "${CMAKE_OPTIONS[@]}" -DOPENCV_EXTRA_MODULES_PATH="$myRepo"/opencv_contrib/modules -DCMAKE_INSTALL_PREFIX="$myRepo/install/$RepoSource" "$myRepo/$RepoSource"
+echo "************************* $Source_DIR -->debug"
+cmake --build .  --config debug
+echo "************************* $Source_DIR -->release"
+cmake --build .  --config release
+cmake --build .  --target install --config release
+cmake --build .  --target install --config debug
+popd
+@endcode
+    In this script I suppose you use VS 2015 in 64 bits
+@code{.bash}
+CMAKE_GENERATOR_OPTIONS=-G"Visual Studio 14 2015 Win64"
+@endcode
+    and opencv will be installed in c:/lib/install/opencv
+@code{.bash}
+-DCMAKE_INSTALL_PREFIX="$myRepo/install/$RepoSource"
+@endcode
+    with no Perf tests, no tests, no doc, no CUDA and no example
+@code{.bash}
+CMAKE_OPTIONS=(-DBUILD_PERF_TESTS:BOOL=OFF -DBUILD_TESTS:BOOL=OFF -DBUILD_DOCS:BOOL=OFF -DBUILD_EXAMPLES:BOOL=OFF)
+@endcode
+-#  In git command line enter following command :
+@code{.bash}
+./installOCV.sh
+@endcode
+-# Drink a coffee or two... opencv is ready : That's all!
+-# Next time you run this script, opencv and opencv_contrib will be updated and rebuild
+
+
 Installation by Making Your Own Libraries from the Source Files {#tutorial_windows_install_build}
 ===============================================================
 
 You may find the content of this tutorial also inside the following videos:
 [Part 1](https://www.youtube.com/watch?v=NnovZ1cTlMs) and [Part 2](https://www.youtube.com/watch?v=qGNWMcfWwPU), hosted on YouTube.
 
-\htmlonly
-<div align="center">
-<iframe title="Install OpenCV by using its source files - Part 1" width="560" height="349" src="http://www.youtube.com/embed/NnovZ1cTlMs?rel=0&loop=1" frameborder="0" allowfullscreen align="middle"></iframe>
-<iframe title="Install OpenCV by using its source files - Part 2" width="560" height="349" src="http://www.youtube.com/embed/qGNWMcfWwPU?rel=0&loop=1" frameborder="0" allowfullscreen align="middle"></iframe>
-</div>
-\endhtmlonly
+@youtube{NnovZ1cTlMs}
+@youtube{qGNWMcfWwPU}
 
 **warning**
 
@@ -71,8 +151,6 @@ of them, you need to download and install them on your system.
 -   [Intel Integrated Performance Primitives (*IPP*)](http://software.intel.com/en-us/articles/intel-ipp/) may be used to improve the performance
     of color conversion, Haar training and DFT functions of the OpenCV library. Watch out, since
     this is not a free service.
--   [Intel IPP Asynchronous C/C++](http://software.intel.com/en-us/intel-ipp-preview) is currently focused delivering Intel Graphics
-    support for advanced image processing and computer vision functions.
 -   OpenCV offers a somewhat fancier and more useful graphical user interface, than the default one
     by using the [Qt framework](http://qt.nokia.com/downloads). For a quick overview of what this has to offer, look into the
     documentations *highgui* module, under the *Qt New Functions* section. Version 4.6 or later of
@@ -85,7 +163,7 @@ of them, you need to download and install them on your system.
     image file format.
 -   The OpenNI Framework contains a set of open source APIs that provide support for natural interaction with devices via methods such as voice command recognition, hand gestures, and body
     motion tracking. Prebuilt binaries can be found [here](http://structure.io/openni). The source code of [OpenNI](https://github.com/OpenNI/OpenNI) and [OpenNI2](https://github.com/OpenNI/OpenNI2) are also available on Github.
--   [Doxygen](http://www.stack.nl/~dimitri/doxygen/) is a documentation generator and is the tool that will actually create the
+-   [Doxygen](http://www.doxygen.nl) is a documentation generator and is the tool that will actually create the
     *OpenCV documentation*.
 
 Now we will describe the steps to follow for a full build (using all the above frameworks, tools and
@@ -133,10 +211,6 @@ libraries). If you do not need the support for some of these, you can just freel
 
         ![](images/IntelTBB.png)
 
-    -#  For the [Intel IPP Asynchronous C/C++](http://software.intel.com/en-us/intel-ipp-preview) download the source files and set environment
-        variable **IPP_ASYNC_ROOT**. It should point to
-        `<your Program Files(x86) directory>/Intel/IPP Preview */ipp directory`. Here \* denotes the
-        particular preview name.
     -#  In case of the [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page#Download) library it is again a case of download and extract to the
         `D:/OpenCV/dep` directory.
     -#  Same as above with [OpenEXR](http://www.openexr.com/downloads.html).
@@ -248,6 +322,7 @@ libraries). If you do not need the support for some of these, you can just freel
         you are concerned about performance, build them and run.
     -   *BUILD_opencv_python* -\> Self-explanatory. Create the binaries to use OpenCV from the
         Python language.
+    -   *BUILD_opencv_world* -\> Generate a single "opencv_world" binary (a shared or static library, depending on *BUILD_SHARED_LIBS*) including all the modules instead of a collection of separate binaries, one binary per module.
 
     Press again the *Configure* button and ensure no errors are reported. If this is the case, you
     can tell CMake to create the project files by pushing the *Generate* button. Go to the build
@@ -277,7 +352,7 @@ libraries). If you do not need the support for some of these, you can just freel
 
     To test your build just go into the `Build/bin/Debug` or `Build/bin/Release` directory and start
     a couple of applications like the *contours.exe*. If they run, you are done. Otherwise,
-    something definitely went awfully wrong. In this case you should contact us at our [Q&A forum](http://answers.opencv.org/).
+    something definitely went awfully wrong. In this case you should contact us at our [Q&A forum](https://forum.opencv.org/).
     If everything is okay, the *contours.exe* output should resemble the following image (if
     built with Qt support):
 
@@ -292,21 +367,21 @@ libraries). If you do not need the support for some of these, you can just freel
 Set the OpenCV environment variable and add it to the systems path {#tutorial_windows_install_path}
 =================================================================
 
-First we set an environment variable to make easier our work. This will hold the build directory of
+First, we set an environment variable to make our work easier. This will hold the build directory of
 our OpenCV library that we use in our projects. Start up a command window and enter:
 @code
-    setx -m OPENCV_DIR D:\OpenCV\Build\x86\vc11     (suggested for Visual Studio 2012 - 32 bit Windows)
-    setx -m OPENCV_DIR D:\OpenCV\Build\x64\vc11     (suggested for Visual Studio 2012 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x64\vc14     (suggested for Visual Studio 2015 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x86\vc14     (suggested for Visual Studio 2015 - 32 bit Windows)
 
-    setx -m OPENCV_DIR D:\OpenCV\Build\x86\vc12     (suggested for Visual Studio 2013 - 32 bit Windows)
-    setx -m OPENCV_DIR D:\OpenCV\Build\x64\vc12     (suggested for Visual Studio 2013 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x64\vc15     (suggested for Visual Studio 2017 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x86\vc15     (suggested for Visual Studio 2017 - 32 bit Windows)
 
-    setx -m OPENCV_DIR D:\OpenCV\Build\x64\vc14     (suggested for Visual Studio 2015 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x64\vc16     (suggested for Visual Studio 2019 - 64 bit Windows)
+    setx OpenCV_DIR D:\OpenCV\build\x86\vc16     (suggested for Visual Studio 2019 - 32 bit Windows)
 @endcode
 Here the directory is where you have your OpenCV binaries (*extracted* or *built*). You can have
 different platform (e.g. x64 instead of x86) or compiler type, so substitute appropriate value.
-Inside this, you should have two folders called *lib* and *bin*. The -m should be added if you wish
-to make the settings computer wise, instead of user wise.
+Inside this, you should have two folders called *lib* and *bin*.
 
 If you built static libraries then you are done. Otherwise, you need to add the *bin* folders path
 to the systems path. This is because you will use the OpenCV library in form of *"Dynamic-link
@@ -330,6 +405,6 @@ Save it to the registry and you are done. If you ever change the location of you
 or want to try out your application with a different build, all you will need to do is to update the
 OPENCV_DIR variable via the *setx* command inside a command window.
 
-Now you can continue reading the tutorials with the @ref tutorial_windows_visual_studio_Opencv section.
+Now you can continue reading the tutorials with the @ref tutorial_windows_visual_studio_opencv section.
 There you will find out how to use the OpenCV library in your own projects with the help of the
 Microsoft Visual Studio IDE.
