@@ -7,6 +7,7 @@ export LC_CTYPE=C
 headers="$(find . -name '*.h') \
 	$(find . -name '*.hpp')"
 files="$(find . -name '*.cpp') \
+	$(find . -name '*.mm') \
 	$(find . -name '*.cmake') \
 	$headers"
 
@@ -16,3 +17,5 @@ perl -pi -e "s/cv(_sidefx)?($matches)/cv_sidefx\2/g" $files
 
 perl -pi -e 's/(namespace\s*)cv(\W|$)/\1cv_sidefx\2/g' $files
 perl -pi -e 's/(\W|^)cv::/\1cv_sidefx::/g' $files
+perl -pi -e 's/(\W|^)cv$/\1cv_sidefx/g' $files
+
