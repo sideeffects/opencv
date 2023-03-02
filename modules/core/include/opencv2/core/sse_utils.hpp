@@ -565,9 +565,6 @@ inline void _mm_deinterleave_ps(__m128 & v_r0, __m128 & v_r1, __m128 & v_g0, __m
     v_a1 = _mm_unpackhi_ps(layer2_chunk3, layer2_chunk7);
 }
 
-#define mask_lo _MM_SHUFFLE(2, 0, 2, 0)
-#define mask_hi _MM_SHUFFLE(3, 1, 3, 1)
-
 inline void _mm_interleave_ps(__m128 & v_r0, __m128 & v_r1, __m128 & v_g0, __m128 & v_g1)
 {
     enum { mask_lo = _MM_SHUFFLE(2, 0, 2, 0), mask_hi = _MM_SHUFFLE(3, 1, 3, 1) };
