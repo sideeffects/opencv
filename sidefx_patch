@@ -19,3 +19,6 @@ perl -pi -e 's/(namespace\s*)cv(\W|$)/\1cv_sidefx\2/g' $files
 perl -pi -e 's/(\W|^)cv::/\1cv_sidefx::/g' $files
 perl -pi -e 's/(\W|^)cv$/\1cv_sidefx/g' $files
 
+cmake="CMakeLists.txt"
+perl -pi -e 's/(^OCV_OPTION\(WITH_.*)ON$/\1OFF/g' $cmake
+
