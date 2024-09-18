@@ -351,7 +351,7 @@ static void sortSamplesByClasses( const Mat& _samples, const Mat& _responses,
     setRangeVector(sidx_all, nsamples);
 
     const int* rptr = _responses.ptr<int>();
-    std::sort(sidx_all.begin(), sidx_all.end(), cmp_lt_idx<int>(rptr));
+    std::stable_sort(sidx_all.begin(), sidx_all.end(), cmp_lt_idx<int>(rptr));
     class_ranges.clear();
     class_ranges.push_back(0);
 
