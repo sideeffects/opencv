@@ -71,31 +71,7 @@ if(NOT ${found})
 
   if(PYTHONINTERP_FOUND)
     # Check if python major version is correct
-<<<<<<< HEAD
-    if(" ${_python_version_major}" STREQUAL " ")
-      set(_python_version_major "${PYTHON_VERSION_MAJOR}")
-    endif()
-    if(NOT "${_python_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}"
-        AND NOT DEFINED ${executable}
-    )
-      if(NOT OPENCV_SKIP_PYTHON_WARNING)
-        message(WARNING "CMake's 'find_host_package(PythonInterp ${__python_package_version})' found wrong Python version:\n"
-                        "PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}\n"
-                        "PYTHON_VERSION_STRING=${PYTHON_VERSION_STRING}\n"
-                        "Consider providing the '${executable}' variable via CMake command line or environment variables\n")
-      endif()
-      ocv_clear_vars(PYTHONINTERP_FOUND PYTHON_EXECUTABLE PYTHON_VERSION_STRING PYTHON_VERSION_MAJOR PYTHON_VERSION_MINOR PYTHON_VERSION_PATCH)
-      set(__PYTHON_PREFIX Python3)
-      find_host_package(${__PYTHON_PREFIX} "${preferred_version}" COMPONENTS Interpreter)
-      if(${__PYTHON_PREFIX}_EXECUTABLE)
-        set(PYTHON_EXECUTABLE "${${__PYTHON_PREFIX}_EXECUTABLE}")
-        find_host_package(PythonInterp "${preferred_version}")  # Populate other variables
-      endif()
-    endif()
-    if(PYTHONINTERP_FOUND AND "${_python_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}")
-=======
     if( "${_preferred_version_major}" STREQUAL "${PYTHON_VERSION_MAJOR}" )
->>>>>>> 83d042ce95 (Fixed an if condition which potentially checked against a variable, $PYTHON_VERSION_MAJOR, that was empty.  This caused a cmake generation failure with cmake 3.14.)
       # Copy outputs
       set(_found ${PYTHONINTERP_FOUND})
       set(_executable ${PYTHON_EXECUTABLE})
